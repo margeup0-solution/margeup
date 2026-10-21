@@ -1,0 +1,22 @@
+/* MargeUp - styles personnalisés (le reste vient de Tailwind) */
+/* Thème clair : fond blanc/gris très clair, textes foncés */
+:root { color-scheme: light; }
+body { font-family: 'Inter', sans-serif; }
+.custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: #F1F5F9; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 4px; }
+.custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #FF6B00; }
+
+/* Impression du bon de sortie */
+@media print {
+  body > *:not(#modal) { display: none !important; }
+  #modal { position: static !important; background: #fff !important; }
+  #modalBox { border: 0 !important; background: #fff !important; }
+  #modalBox, #modalBox * { color: #000 !important; }
+  #modalBox button { display: none !important; }
+}
+
+/* Logo : rendu net et sans déformation */
+img[src*="logo"] { object-fit: contain; }
+/* Le logo garde ses couleurs à l'impression */
+@media print { img[src*="logo"] { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }

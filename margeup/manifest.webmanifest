@@ -1,0 +1,18 @@
+{
+  "name": "MargeUp - ERP BTP, Génie civil & Transport",
+  "short_name": "MargeUp",
+  "description": "Votre marge sous contrôle : chantiers, flotte et quincaillerie au Sénégal.",
+  "lang": "fr",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#060D20",
+  "theme_color": "#060D20",
+  "icons": [
+    { "src": "images/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "images/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "images/icon-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "images/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
