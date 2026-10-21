@@ -37,9 +37,59 @@ function toast(t) {
 }
 
 /* ---------- DONNÉES ---------- */
+function defaultReviews() {
+  return [
+    {
+      id: 'rev-1',
+      author: 'Mamadou Ndiaye',
+      role: 'Directeur Général',
+      company: 'Sahel BTP & Génie Civil',
+      city: 'Dakar / Diamniadio',
+      rating: 5,
+      date: day(-3),
+      tag: 'Flotte & Carburant',
+      text: "Grâce à MargeUp, nous avons enfin une visibilité en direct sur la consommation de nos camions bennes et le nombre de tours quotidiens entre la carrière de Bargny et nos chantiers. Plus aucune triche sur le carburant, nous avons économisé près de 2,3 millions FCFA dès le premier mois."
+    },
+    {
+      id: 'rev-2',
+      author: 'Fatou Bintou Diop',
+      role: 'Gérante Propriétaire',
+      company: 'Quincaillerie Moderne du Rail',
+      city: 'Thiès',
+      rating: 5,
+      date: day(-8),
+      tag: 'Quincaillerie & Vente',
+      text: "Le double guichet B2C/B2B et l’impression des reçus thermiques ont changé notre quotidien. Le stock de ciment et fer à béton est à jour en direct, sans inventaire de fin de mois douloureux. Mes magasiniers l'adorent."
+    },
+    {
+      id: 'rev-3',
+      author: 'Cheikh Oumar Tall',
+      role: 'Responsable Flotte & Logistique',
+      company: 'Trans-Sénégal Express',
+      city: 'Rufisque',
+      rating: 5,
+      date: day(-15),
+      tag: 'Transport & Rotations',
+      text: "Le suivi des voyages avec les lieux précis de départ et de déchargement a complètement transformé notre contrôle. Le classement des chauffeurs avec prime au mérite a motivé toute l'équipe et diminué les pannes évitables."
+    },
+    {
+      id: 'rev-4',
+      author: 'Ing. Awa Sarr',
+      role: 'Directrice des Travaux',
+      company: 'Consortium Teranga Bâtiment',
+      city: 'Diamniadio',
+      rating: 5,
+      date: day(-22),
+      tag: 'BTP & Gros Œuvre',
+      text: "L'anticipation automatique des retards sur le gros œuvre et l'imputation directe des dépenses au bon chantier permettent de piloter la vraie marge nette. Un ERP vraiment adapté à nos réalités au Sénégal."
+    }
+  ];
+}
+
 function seed() {
   return {
     co: null, trial: null, sub: null, demo: true, roles: {}, team: [], seq: 3,
+    reviews: defaultReviews(),
     depots: [{ id: 'd1', nom: 'Quincaillerie principale' }],
     sales: [
       { id: 'v3', num: 'FAC-2026-0003', depot: 'd1', date: day(-1), stype: 'detail', kind: 'particulier', client: { nom: 'dangote', tel: '' }, pay: 'Espèces', lines: [{ item: 1, name: 'ciment', unit: 'tonne', qty: 2, pu: 4250 }], total: 8500 },
@@ -72,9 +122,26 @@ function seed() {
       { id: 6, chantier: 'thies', date: day(-3), title: 'Gazole engins de terrassement', source: 'Station Total Thiès', cat: 'Carburant', amount: 1250000 }
     ],
     fleet: [
-      { id: 1, name: 'Shacman X3000', plate: 'DK-8891-BG', status: 'En Mission', driver: 'Modou Diop', type: 'tracteur', carb: [{ d: day(-2), l: 180, amount: 144000, km: null, station: 'Shell Diamniadio' }, { d: day(-9), l: 200, amount: 160000, km: null, station: 'Shell Diamniadio' }], trips: [{ d: day(-2), voyages: 6, km: 540 }, { d: day(-9), voyages: 7, km: 610 }] },
-      { id: 2, name: 'Mercedes Arocs Toupie', plate: 'DK-4102-BH', status: 'Disponible', driver: 'Ibrahima Sarr', type: 'toupie', carb: [{ d: day(-4), l: 150, amount: 120000, km: null, station: 'Total Rufisque' }], trips: [{ d: day(-4), voyages: 5, km: 380 }] },
-      { id: 3, name: 'Volvo FMX Benne', plate: 'DK-1029-BF', status: 'En Panne', driver: 'Alioune Badara', type: 'benne', carb: [{ d: day(-3), l: 220, amount: 176000, km: null, station: 'Total Thiès' }, { d: day(-8), l: 180, amount: 144000, km: null, station: 'Total Thiès' }], trips: [{ d: day(-3), voyages: 8, km: 420 }, { d: day(-8), voyages: 6, km: 350 }] }
+      { id: 1, name: 'Shacman X3000', plate: 'DK-8891-BG', status: 'En Mission', driver: 'Modou Diop', type: 'tracteur',
+        carb: [{ d: day(-2), l: 180, amount: 144000, km: null, station: 'Shell Diamniadio' }, { d: day(-9), l: 200, amount: 160000, km: null, station: 'Shell Diamniadio' }],
+        trips: [
+          { d: day(-2), voyages: 6, km: 540, depart: 'Carrière Bargny', arrivee: 'Chantier Tour Diamniadio', obs: 'Sable de dune 0/4' },
+          { d: day(-9), voyages: 7, km: 610, depart: 'Port Autonome de Dakar', arrivee: 'Chantier BRT Dakar', obs: 'Fer à béton Ø12' }
+        ]
+      },
+      { id: 2, name: 'Mercedes Arocs Toupie', plate: 'DK-4102-BH', status: 'Disponible', driver: 'Ibrahima Sarr', type: 'toupie',
+        carb: [{ d: day(-4), l: 150, amount: 120000, km: null, station: 'Total Rufisque' }],
+        trips: [
+          { d: day(-4), voyages: 5, km: 380, depart: 'Centrale à béton Rufisque', arrivee: 'Chantier Lycée', obs: 'Béton prêt à l’emploi B25' }
+        ]
+      },
+      { id: 3, name: 'Volvo FMX Benne', plate: 'DK-1029-BF', status: 'En Panne', driver: 'Alioune Badara', type: 'benne',
+        carb: [{ d: day(-3), l: 220, amount: 176000, km: null, station: 'Total Thiès' }, { d: day(-8), l: 180, amount: 144000, km: null, station: 'Total Thiès' }],
+        trips: [
+          { d: day(-3), voyages: 8, km: 420, depart: 'Carrière Pout', arrivee: 'Chantier Autoroute Thiès', obs: 'Basalte concassé' },
+          { d: day(-8), voyages: 6, km: 350, depart: 'Carrière Sindia', arrivee: 'Chantier Tour Diamniadio', obs: 'Tout-venant compacté' }
+        ]
+      }
     ],
     batiments: [
       { id: 'b1', chantier: 'brt', nom: 'Bâtiment A, R+2', niveaux: 3, niveauActuel: 2, ingenieur: 'Ing. Mamadou Gueye', resp: 'Chef Diallo', debut: day(-60), prevision: day(75), livraison: day(90), note: 'Coulage de la dalle du R+2 prévu dans deux semaines', ph: { terr: 100, gros: 80, dalle: 40, maco: 10, elec: 0, fin: 0, rec: 0 } },
@@ -134,10 +201,18 @@ function _normalize(s) {
   s.inventory.forEach(i => { i.depot = i.depot || s.depots[0].id; if (i.priceGros == null) i.priceGros = i.price; });
   s.sales = s.sales || [];
   s.fleet = s.fleet || [];
+  s.fleet.forEach(f => {
+    (f.trips || []).forEach(t => {
+      t.depart = t.depart || '';
+      t.arrivee = t.arrivee || '';
+      t.obs = t.obs || '';
+    });
+  });
   s.pannes = s.pannes || [];
   s.expenses = s.expenses || [];
   s.chantiers = s.chantiers || [];
   s.batiments = s.batiments || [];
+  s.reviews = (s.reviews && s.reviews.length) ? s.reviews : defaultReviews();
   s.seq = s.seq || s.sales.length;
   return s;
 }
@@ -569,7 +644,7 @@ function renderPannes() {
 function carbStats0(f) { const m = day().slice(0, 7), c = f.carb || [], M = c.filter(x => (x.d || '').startsWith(m)); return { l: M.reduce((s, x) => s + x.l, 0), a: M.reduce((s, x) => s + (x.amount || 0), 0), last: c[0] }; }
 function carbStats(f) {
   const m = day().slice(0, 7), c = f.carb || [], M = c.filter(x => (x.d || '').startsWith(m)), T = (f.trips || []).filter(x => (x.d || '').startsWith(m));
-  return { l: M.reduce((s, x) => s + x.l, 0), a: M.reduce((s, x) => s + (x.amount || 0), 0), last: c[0], km: T.reduce((s, x) => s + (x.km || 0), 0), v: T.reduce((s, x) => s + (x.voyages || 0), 0) };
+  return { l: M.reduce((s, x) => s + x.l, 0), a: M.reduce((s, x) => s + (x.amount || 0), 0), last: c[0], km: T.reduce((s, x) => s + (x.km || 0), 0), v: T.reduce((s, x) => s + (x.voyages || 0), 0), lastTrip: (f.trips || [])[0] };
 }
 function renderFleet() {
   $('fleet-cards-container').innerHTML = scopeFleet().length ? scopeFleet().map(f => `
@@ -577,8 +652,36 @@ function renderFleet() {
       <img src="${TYPE_IMG[f.type] || TYPE_IMG.benne}" alt="${esc(f.name)}" loading="lazy" class="w-full h-28 object-cover rounded-lg">
       <div class="flex justify-between items-start gap-2"><div><div class="font-bold text-slate-900 text-sm">${esc(f.name)}</div><div class="text-[11px] text-slate-500">${esc(f.plate)} • Chauffeur: ${esc(f.driver)}</div></div>
       <span class="text-[10px] bg-slate-100 border border-slate-300 ${f.status === 'En Panne' ? 'text-rose-600' : 'text-amber-600'} px-2 py-0.5 rounded-full font-bold">${esc(f.status)}</span></div>
-      ${(() => { const s = carbStats(f); return `<div class="bg-slate-100 rounded-lg p-2.5 text-[11px] text-slate-700"><div class="flex justify-between gap-2"><span class="text-slate-600">Carburant ce mois</span><b class="text-amber-700">${fm(s.l)} L · ${fm(s.a)} FCFA</b></div><div class="flex justify-between gap-2 mt-1"><span class="text-slate-600">Voyages · distance</span><b class="text-slate-900">${s.v} · ${fm(s.km)} km</b></div>${s.last ? `<div class="text-slate-600 mt-1">Dernier plein : ${fr(s.last.d)}, ${fm(s.last.l)} L</div>` : '<div class="text-slate-500 mt-1">Aucun plein enregistré</div>'}</div>`; })()}
-      <div class="flex flex-wrap gap-2"><button onclick="openFuelModal(${f.id})" class="flex-1 bg-amber-600 hover:bg-amber-500 text-white text-[11px] font-bold py-1.5 rounded-lg">Plein de carburant</button><button onclick="openTripModal(${f.id})" class="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-900 text-[11px] font-bold py-1.5 rounded-lg">Saisir un voyage</button><button onclick="delTruck(${f.id})" class="px-2.5 text-[11px] bg-slate-100 text-slate-500 rounded-lg">Retirer</button></div>
+      ${(() => {
+        const s = carbStats(f);
+        return `<div class="bg-slate-100 rounded-lg p-2.5 text-[11px] text-slate-700 space-y-1.5">
+          <div class="flex justify-between gap-2"><span class="text-slate-600">Carburant ce mois</span><b class="text-amber-700">${fm(s.l)} L · ${fm(s.a)} FCFA</b></div>
+          <div class="flex justify-between gap-2"><span class="text-slate-600">Voyages · distance</span><b class="text-slate-900">${s.v} tour${s.v > 1 ? 's' : ''} · ${fm(s.km)} km</b></div>
+          ${s.last ? `<div class="text-slate-600">Dernier plein : ${fr(s.last.d)}, ${fm(s.last.l)} L</div>` : '<div class="text-slate-500">Aucun plein enregistré</div>'}
+          ${s.lastTrip ? `
+            <div class="pt-1.5 border-t border-slate-200 text-slate-700">
+              <span class="text-[10px] text-amber-800 font-bold uppercase block">Dernier trajet (${s.lastTrip.voyages || 1} tour${(s.lastTrip.voyages || 1) > 1 ? 's' : ''}) :</span>
+              <div class="font-semibold text-slate-900 flex items-center gap-1.5 truncate mt-0.5" title="${esc(s.lastTrip.depart || '—')} ➔ ${esc(s.lastTrip.arrivee || '—')}">
+                <i class="fa-solid fa-location-dot text-amber-600 text-[10px]"></i>
+                <span class="truncate">${esc(s.lastTrip.depart || 'Départ non précisé')}</span>
+                <i class="fa-solid fa-arrow-right text-[9px] text-slate-400 shrink-0"></i>
+                <span class="truncate">${esc(s.lastTrip.arrivee || 'Arrivée non précisée')}</span>
+              </div>
+            </div>` : ''}
+        </div>`;
+      })()}
+      <div class="flex flex-wrap gap-2">
+        <button onclick="openFuelModal(${f.id})" class="flex-1 bg-amber-600 hover:bg-amber-500 text-white text-[11px] font-bold py-1.5 rounded-lg">Plein carburant</button>
+        <button onclick="openTripModal(${f.id})" class="flex-1 bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold py-1.5 rounded-lg flex items-center justify-center gap-1">
+          <i class="fa-solid fa-route text-[10px] text-amber-400"></i> Tours & Lieux
+        </button>
+        <button onclick="openTruckTripsModal(${f.id})" class="px-2.5 py-1.5 text-[11px] bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold rounded-lg" title="Historique complet des tours de ce camion">
+          <i class="fa-solid fa-list-check"></i>
+        </button>
+        <button onclick="delTruck(${f.id})" class="px-2 text-[11px] bg-slate-100 hover:bg-rose-100 hover:text-rose-600 text-slate-500 rounded-lg" title="Retirer de la flotte">
+          <i class="fa-solid fa-trash-can"></i>
+        </button>
+      </div>
     </div>`).join('') : '<div class="md:col-span-3 text-center text-slate-500 text-xs p-6">Aucun camion. Cliquez sur « Ajouter un camion ».</div>';
 }
 function openTruckModal() {
@@ -595,8 +698,39 @@ function openFuelModal(id) {
 }
 function openTripModal(id) {
   const f = S.fleet.find(x => x.id == id); if (!f) return;
-  openModal(formWrap('Voyages : ' + esc(f.name), 'trip', `<input type="hidden" name="id" value="${f.id}"><p class="text-xs text-slate-600">Chauffeur : ${esc(f.driver)}</p>` +
-    '<div class="grid grid-cols-2 gap-3">' + fld('Date', 'd', 'date', `required value="${day()}"`) + fld('Nombre de voyages (tours)', 'voyages', 'number', 'required min="1" value="1"') + '</div>' + fld('Distance totale parcourue (km)', 'km', 'number', 'required min="0" step="any"'), 'Enregistrer'));
+  const departSuggestions = ['Carrière Bargny', 'Carrière Sindia', 'Carrière Pout', 'Port Autonome de Dakar', 'Centrale à béton Rufisque', 'Dépôt principal'].concat(S.chantiers.map(c => c.nom.replace(/^Chantier\s*/i, '')));
+  const arriveeSuggestions = S.chantiers.map(c => c.nom).concat(['Dakar Plateau', 'Diamniadio Ville Nouvelle', 'Thiès', 'Mbour', 'Lac Rose', 'Rufisque']);
+
+  const departOpts = Array.from(new Set(departSuggestions)).map(s => `<option value="${esc(s)}"></option>`).join('');
+  const arriveeOpts = Array.from(new Set(arriveeSuggestions)).map(s => `<option value="${esc(s)}"></option>`).join('');
+
+  openModal(formWrap('Saisir voyages & lieux : ' + esc(f.name), 'trip',
+    `<input type="hidden" name="id" value="${f.id}">
+     <div class="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 text-xs text-amber-900 flex justify-between items-center">
+       <div>Véhicule : <b>${esc(f.name)}</b> (${esc(f.plate)})</div>
+       <div>Chauffeur : <b>${esc(f.driver)}</b></div>
+     </div>
+     <div class="grid grid-cols-2 gap-3">
+       ${fld('Date *', 'd', 'date', `required value="${day()}"`)}
+       ${fld('Nombre de voyages (tours) *', 'voyages', 'number', 'required min="1" value="1"')}
+     </div>
+     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+       <label class="block text-xs font-semibold text-slate-500">
+         Lieu de départ (chargement) *
+         <input name="depart" list="list-depart" required placeholder="Ex. Carrière Bargny, Port Dakar..." class="${INPUT} mt-1">
+         <datalist id="list-depart">${departOpts}</datalist>
+       </label>
+       <label class="block text-xs font-semibold text-slate-500">
+         Lieu d'arrivée (destination / chantier) *
+         <input name="arrivee" list="list-arrivee" required placeholder="Ex. Chantier Tour Diamniadio, Dakar..." class="${INPUT} mt-1">
+         <datalist id="list-arrivee">${arriveeOpts}</datalist>
+       </label>
+     </div>
+     <div class="grid grid-cols-2 gap-3">
+       ${fld('Distance totale (km)', 'km', 'number', 'min="0" step="any" placeholder="Ex. 140"')}
+       ${fld('Marchandise / Observations (facultatif)', 'obs', 'text', 'placeholder="Ex. Sable 0/4, Fer Ø12, Béton B25..."')}
+     </div>`,
+    'Enregistrer le voyage'));
 }
 function driverStats(period) {
   const m = day().slice(0, 7), inP = d => period === 'all' || (d || '').startsWith(m), map = {};
@@ -723,6 +857,243 @@ function renderCeo() {
   c2 = new Chart($('ceoProfitChart').getContext('2d'), { type: 'bar', data: { labels: S.chantiers.map(c => c.nom.replace('Chantier ', '')), datasets: [{ label: 'Budget (FCFA)', data: S.chantiers.map(c => c.budget), backgroundColor: '#CBD5E1' }, { label: 'Dépenses réelles', data: S.chantiers.map(c => spent(c.id)), backgroundColor: '#FF6B00' }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#64748B', font: { size: 11 } } } }, scales: { x: { ticks: { color: '#64748B' }, grid: { display: false } }, y: { ticks: { color: '#64748B' }, grid: { color: '#E2E8F0' } } } } });
 }
 
+/* ---------- VOYAGES, LIEUX & ROTATIONS FLOTTE ---------- */
+function openQuickTripModal() {
+  const fl = scopeFleet();
+  if (!fl.length) return toast('Ajoutez d’abord un camion à votre flotte.');
+  if (fl.length === 1) return openTripModal(fl[0].id);
+  openModal(`<h3 class="text-base font-bold text-slate-900">Choisir le camion pour le voyage</h3>
+    <p class="text-xs text-slate-600 mb-3">Sélectionnez le camion pour lequel vous saisissez des tours et les lieux de rotation.</p>
+    <div class="space-y-2">
+      ${fl.map(f => `
+        <button onclick="closeModal(); openTripModal(${f.id})" class="w-full text-left p-3 rounded-xl border border-slate-200 hover:border-amber-500 hover:bg-amber-50 transition flex justify-between items-center cursor-pointer">
+          <div>
+            <div class="font-bold text-slate-900 text-sm">${esc(f.name)} (${esc(f.plate)})</div>
+            <div class="text-xs text-slate-500">Chauffeur : ${esc(f.driver)}</div>
+          </div>
+          <i class="fa-solid fa-arrow-right text-amber-600"></i>
+        </button>`).join('')}
+    </div>
+    <div class="flex justify-end pt-3">
+      <button onclick="closeModal()" class="px-4 py-2 rounded-xl text-xs bg-slate-100 text-slate-600 cursor-pointer">Fermer</button>
+    </div>`);
+}
+
+function openTruckTripsModal(id) {
+  const f = S.fleet.find(x => x.id == id); if (!f) return;
+  const trips = f.trips || [];
+  openModal(`
+    <div class="flex justify-between items-center border-b border-slate-200 pb-3">
+      <div>
+        <h3 class="text-base font-bold text-slate-900">Historique des voyages : ${esc(f.name)}</h3>
+        <p class="text-xs text-slate-500">${esc(f.plate)} • Chauffeur : ${esc(f.driver)}</p>
+      </div>
+      <button onclick="closeModal(); openTripModal(${f.id})" class="bg-amber-600 hover:bg-amber-500 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1.5 cursor-pointer">
+        <i class="fa-solid fa-plus"></i> Saisir un tour
+      </button>
+    </div>
+    <div class="max-h-96 overflow-y-auto space-y-2.5 my-3 custom-scrollbar pr-1">
+      ${trips.length ? trips.map((t, idx) => `
+        <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs space-y-1.5">
+          <div class="flex justify-between items-center">
+            <span class="font-bold text-slate-900">${fr(t.d)}</span>
+            <span class="bg-amber-100 text-amber-800 font-bold px-2 py-0.5 rounded-full text-[10px]">${t.voyages || 1} tour${(t.voyages || 1) > 1 ? 's' : ''} · ${fm(t.km || 0)} km</span>
+          </div>
+          <div class="flex items-center gap-1.5 text-slate-800 font-medium">
+            <i class="fa-solid fa-location-dot text-amber-600 text-[10px]"></i>
+            <span>${esc(t.depart || 'Lieu départ non précisé')}</span>
+            <i class="fa-solid fa-arrow-right text-[10px] text-slate-400"></i>
+            <span>${esc(t.arrivee || 'Lieu arrivée non précisé')}</span>
+          </div>
+          ${t.obs ? `<div class="text-[11px] text-slate-500 italic bg-white p-1.5 rounded border border-slate-100">${esc(t.obs)}</div>` : ''}
+          <div class="flex justify-end pt-1">
+            <button onclick="delTrip(${f.id}, ${idx})" class="text-[11px] text-rose-600 hover:underline cursor-pointer">Supprimer ce voyage</button>
+          </div>
+        </div>
+      `).join('') : '<div class="text-center text-xs text-slate-500 py-6">Aucun voyage enregistré pour ce camion.</div>'}
+    </div>
+    <div class="flex justify-end pt-2 border-t border-slate-200">
+      <button onclick="closeModal()" class="px-4 py-2 rounded-xl text-xs bg-slate-100 text-slate-600 cursor-pointer">Fermer</button>
+    </div>
+  `);
+}
+
+function delTrip(truckId, idx) {
+  if (!confirm('Voulez-vous supprimer ce voyage / rotation ?')) return;
+  const f = S.fleet.find(x => x.id == truckId);
+  if (!f || !f.trips) return;
+  f.trips.splice(idx, 1);
+  save();
+  renderAll();
+  closeModal();
+  toast('Voyage supprimé');
+}
+
+function renderTripsJournal() {
+  const selFilter = $('filter-trips-truck');
+  const fl = scopeFleet();
+  if (selFilter) {
+    const curVal = selFilter.value || 'all';
+    selFilter.innerHTML = '<option value="all">Tous les camions</option>' + fl.map(f => `<option value="${f.id}" ${String(curVal) === String(f.id) ? 'selected' : ''}>${esc(f.name)} (${esc(f.plate)})</option>`).join('');
+  }
+  const filterVal = selFilter ? selFilter.value : 'all';
+  const targetFleet = filterVal === 'all' ? fl : fl.filter(f => String(f.id) === String(filterVal));
+
+  const allTrips = [];
+  targetFleet.forEach(f => {
+    (f.trips || []).forEach((t, idx) => {
+      allTrips.push({
+        truckId: f.id,
+        truckName: f.name,
+        truckPlate: f.plate,
+        driver: f.driver,
+        tripIdx: idx,
+        d: t.d || '',
+        voyages: t.voyages || 1,
+        km: t.km || 0,
+        depart: t.depart || '—',
+        arrivee: t.arrivee || '—',
+        obs: t.obs || ''
+      });
+    });
+  });
+
+  allTrips.sort((a, b) => (b.d || '').localeCompare(a.d || ''));
+
+  const tbody = $('trips-journal-body');
+  if (!tbody) return;
+  tbody.innerHTML = allTrips.length ? allTrips.map(t => `
+    <tr class="hover:bg-slate-50 transition">
+      <td class="p-3 font-semibold text-slate-900 whitespace-nowrap">${fr(t.d)}</td>
+      <td class="p-3">
+        <div class="font-bold text-slate-900">${esc(t.truckName)}</div>
+        <div class="text-[10px] text-slate-500">${esc(t.truckPlate)}</div>
+      </td>
+      <td class="p-3 font-medium text-slate-700">${esc(t.driver)}</td>
+      <td class="p-3">
+        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800">
+          ${t.voyages} tour${t.voyages > 1 ? 's' : ''}
+        </span>
+      </td>
+      <td class="p-3">
+        <div class="flex items-center gap-1.5 font-medium text-slate-900">
+          <i class="fa-solid fa-location-dot text-amber-600 text-[10px]"></i>
+          <span>${esc(t.depart)}</span>
+        </div>
+      </td>
+      <td class="p-3">
+        <div class="flex items-center gap-1.5 font-medium text-slate-900">
+          <i class="fa-solid fa-flag-checkered text-emerald-600 text-[10px]"></i>
+          <span>${esc(t.arrivee)}</span>
+        </div>
+      </td>
+      <td class="p-3 text-slate-700 whitespace-nowrap">${t.km ? fm(t.km) + ' km' : '—'}</td>
+      <td class="p-3 text-slate-500 italic max-w-xs truncate">${esc(t.obs || '—')}</td>
+      <td class="p-3 text-right">
+        <button onclick="delTrip(${t.truckId}, ${t.tripIdx})" class="text-slate-400 hover:text-rose-600 transition p-1 cursor-pointer" title="Supprimer ce voyage">
+          <i class="fa-solid fa-trash-can"></i>
+        </button>
+      </td>
+    </tr>
+  `).join('') : '<tr><td colspan="9" class="p-6 text-center text-slate-500">Aucun voyage enregistré. Cliquez sur « Saisir un voyage / tour » pour enregistrer les rotations et les lieux.</td></tr>';
+}
+
+/* ---------- AVIS DES UTILISATEURS ---------- */
+function renderReviews() {
+  const container = $('reviews-container');
+  if (!container) return;
+  const list = S.reviews || [];
+  if (!list.length) {
+    container.innerHTML = '<div class="col-span-2 text-center text-xs text-slate-500 p-6">Aucun avis pour le moment. Soyez le premier à donner votre avis !</div>';
+    return;
+  }
+  container.innerHTML = list.map(r => {
+    const initials = (r.author || 'M').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+    const stars = Array.from({ length: 5 }, (_, i) => `<i class="fa-solid fa-star ${i < (r.rating || 5) ? 'text-amber-400' : 'text-slate-200'}"></i>`).join('');
+    return `
+      <div class="bg-white border border-slate-200 rounded-2xl p-5 space-y-3.5 hover:shadow-md transition">
+        <div class="flex items-start justify-between gap-3">
+          <div class="flex items-center space-x-3">
+            <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-orange-500 to-amber-600 text-white font-black text-sm flex items-center justify-center shadow-md shadow-orange-500/20 shrink-0">
+              ${initials}
+            </div>
+            <div>
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="font-bold text-slate-900 text-sm">${esc(r.author)}</span>
+                <span class="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-200">
+                  <i class="fa-solid fa-circle-check text-[9px]"></i> Client vérifié
+                </span>
+              </div>
+              <div class="text-xs text-slate-500">${esc(r.role)} • <span class="text-slate-700 font-semibold">${esc(r.company)}</span></div>
+            </div>
+          </div>
+          <div class="flex items-center text-xs space-x-0.5 shrink-0">
+            ${stars}
+          </div>
+        </div>
+
+        <p class="text-xs text-slate-700 leading-relaxed italic bg-slate-50/70 p-3 rounded-xl border border-slate-100">
+          « ${esc(r.text)} »
+        </p>
+
+        <div class="flex items-center justify-between text-[11px] text-slate-400 pt-1 border-t border-slate-100">
+          <span class="flex items-center gap-1 text-slate-600 font-medium">
+            <i class="fa-solid fa-location-dot text-orange-500"></i> ${esc(r.city || 'Sénégal')}
+          </span>
+          <span class="bg-orange-50 text-orange-700 font-bold px-2 py-0.5 rounded-full text-[10px] border border-orange-200/50">
+            ${esc(r.tag || 'BTP & Transport')}
+          </span>
+          <span>${fr(r.date)}</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function openReviewModal() {
+  openModal(formWrap('Partager votre avis d’utilisateur MargeUp', 'review',
+    `<p class="text-xs text-slate-600">Votre retour d'expérience aide les entrepreneurs du BTP, transporteurs et quincaillers au Sénégal.</p>
+     <div class="grid grid-cols-2 gap-3">
+       ${fld('Votre nom & prénom *', 'author', 'text', 'required placeholder="Ex. Cheikh Oumar Diop"')}
+       ${fld('Entreprise / Société *', 'company', 'text', 'required placeholder="Ex. Touba BTP SARL"')}
+     </div>
+     <div class="grid grid-cols-2 gap-3">
+       ${fld('Votre fonction / poste *', 'role', 'text', 'required placeholder="Ex. Directeur des Travaux, Gérant..."')}
+       ${sel('Ville / Région *', 'city', [
+         ['Dakar', 'Dakar'],
+         ['Diamniadio', 'Diamniadio'],
+         ['Thiès', 'Thiès'],
+         ['Rufisque', 'Rufisque'],
+         ['Mbour', 'Mbour'],
+         ['Saint-Louis', 'Saint-Louis'],
+         ['Kaolack', 'Kaolack'],
+         ['Ziguinchor', 'Ziguinchor'],
+         ['Autre région', 'Autre région']
+       ])}
+     </div>
+     <div class="grid grid-cols-2 gap-3">
+       ${sel('Note globale *', 'rating', [
+         ['5', '⭐⭐⭐⭐⭐ (5/5 Excellent)'],
+         ['4', '⭐⭐⭐⭐ (4/5 Très bon)'],
+         ['3', '⭐⭐⭐ (3/5 Bon)'],
+         ['2', '⭐⭐ (2/5 Moyen)'],
+         ['1', '⭐ (1/5 À améliorer)']
+       ])}
+       ${sel('Module principal utilisé', 'tag', [
+         ['Flotte & Carburant', 'Flotte & Carburant'],
+         ['Transport & Rotations', 'Transport & Rotations'],
+         ['Quincaillerie & Vente', 'Quincaillerie & Vente'],
+         ['Chantiers & BTP', 'Chantiers & BTP'],
+         ['Direction & Marges', 'Direction & Marges']
+       ])}
+     </div>
+     <label class="block text-xs font-semibold text-slate-500">
+       Votre avis / retour d'expérience *
+       <textarea name="text" required rows="3" placeholder="Racontez comment MargeUp vous aide à contrôler vos camions, vos matériaux ou vos marges..." class="${INPUT} mt-1"></textarea>
+     </label>`,
+    'Publier mon avis'));
+}
+
 /* ---------- AFFICHAGE GÉNÉRAL ---------- */
 function renderDemoBar() {
   $('demoBar').innerHTML = S.demo ? '<div class="mb-6 bg-amber-500/10 border border-amber-500/30 text-amber-700 rounded-xl p-3 text-xs flex flex-wrap items-center justify-between gap-2"><span><i class="fa-solid fa-flask"></i> Vous voyez des données d’exemple.</span><button onclick="clearDemo()" class="bg-amber-500 text-slate-950 font-bold px-3 py-1.5 rounded-lg">Commencer avec mes propres données</button></div>' : '';
@@ -733,11 +1104,27 @@ function clearDemo() {
 }
 function renderAll() {
   $('coBtn').innerHTML = '<i class="fa-solid fa-building text-orange-600"></i> ' + esc(S.co ? S.co.nom : 'Créer mon espace');
-  renderBanner(); renderDemoBar(); renderInventory(); renderPannes(); renderFleet(); renderDrivers(); renderChantiers(); renderCeo(); renderContact();
+  renderBanner(); renderDemoBar(); renderInventory(); renderPannes(); renderFleet(); renderTripsJournal(); renderDrivers(); renderChantiers(); renderCeo(); renderContact(); renderReviews();
 }
 
 /* ---------- FORMULAIRES ---------- */
 const FORMS = {
+  review(d) {
+    const author = (d.author || '').trim(), company = (d.company || '').trim(), text = (d.text || '').trim();
+    if (!author || !company || !text) { toast('Nom, entreprise et avis obligatoires.'); return; }
+    (S.reviews = S.reviews || []).unshift({
+      id: 'rev-' + uid(),
+      author,
+      company,
+      role: (d.role || 'Utilisateur').trim(),
+      city: d.city || 'Sénégal',
+      rating: +d.rating || 5,
+      tag: d.tag || 'BTP & Transport',
+      text,
+      date: day()
+    });
+    save(); closeModal(); renderAll(); toast('Merci pour votre avis ! Votre témoignage a été publié.');
+  },
   member(d) {
     const nom = (d.nom || '').trim(), email = (d.email || '').trim().toLowerCase(), tel = (d.tel || '').trim(), parts = String(d.scope).split(':'), type = parts[0], sid = parts[1];
     if (!nom || !/^\S+@\S+\.\S+$/.test(email) || tel.replace(/\D/g, '').length < 9) { $('memErr').textContent = 'Nom, e-mail et téléphone valides sont obligatoires.'; return; }
@@ -789,7 +1176,19 @@ const FORMS = {
     save(); renderAll();
     openModal(`<div id="bon" class="font-mono text-xs space-y-1"><div class="text-center font-bold border-b border-slate-300 pb-2 text-slate-900">${esc(S.co ? S.co.nom : 'MARGEUP')} · BON DE SORTIE</div><div class="flex justify-between"><span>Date</span><span>${fr(day())}</span></div><div class="flex justify-between"><span>Chantier</span><span>${esc(c.nom)}</span></div><div class="flex justify-between"><span>Article</span><span>${esc(i.name)}</span></div><div class="flex justify-between"><span>Quantité</span><span>${fm(q)} ${esc(i.unit)}</span></div><div class="flex justify-between font-bold"><span>Valeur</span><span>${fm(q * i.price)} FCFA</span></div></div><p class="text-[11px] text-emerald-600">La dépense a été ajoutée au chantier.</p><div class="flex justify-end gap-2"><button onclick="closeModal()" class="px-4 py-2 rounded-xl text-xs bg-slate-100 text-slate-600">Fermer</button><button onclick="window.print()" class="px-4 py-2 rounded-xl text-xs bg-purple-600 text-white font-bold">Imprimer</button></div>`);
   },
-  trip(d) { const f = S.fleet.find(x => x.id == d.id); (f.trips = f.trips || []).unshift({ d: d.d || day(), voyages: +d.voyages || 1, km: +d.km || 0 }); save(); closeModal(); renderAll(); toast('Voyage enregistré'); },
+  trip(d) {
+    const f = S.fleet.find(x => x.id == d.id);
+    if (!f) return;
+    (f.trips = f.trips || []).unshift({
+      d: d.d || day(),
+      voyages: +d.voyages || 1,
+      km: +d.km || 0,
+      depart: (d.depart || '').trim(),
+      arrivee: (d.arrivee || '').trim(),
+      obs: (d.obs || '').trim()
+    });
+    save(); closeModal(); renderAll(); toast('Voyage, rotation et lieux enregistrés');
+  },
   truck(d) { S.fleet.push({ id: Date.now(), name: d.name, plate: d.plate, driver: d.driver, type: d.type || 'benne', status: 'Disponible', carb: [] }); save(); closeModal(); renderAll(); toast('Camion ajouté'); },
   fuel(d) {
     const f = S.fleet.find(x => x.id == d.id), l = +d.l, amount = +d.amount || 0;

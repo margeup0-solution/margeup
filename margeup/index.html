@@ -288,6 +288,57 @@
         </div>
       </div>
 
+      <!-- AVIS DES UTILISATEURS & TÉMOIGNAGES CLIENTS -->
+      <div class="space-y-6">
+        <div class="flex flex-col md:flex-row md:items-end justify-between gap-4">
+          <div>
+            <div class="inline-flex items-center space-x-1.5 bg-orange-500/10 text-orange-700 border border-orange-500/30 px-3 py-1 rounded-full text-xs font-bold mb-2">
+              <i class="fa-solid fa-star text-amber-500"></i>
+              <span>Avis & Témoignages du Terrain</span>
+            </div>
+            <h2 class="text-2xl sm:text-3xl font-black text-slate-900">Ce que disent les professionnels au Sénégal</h2>
+            <p class="text-xs sm:text-sm text-slate-600 mt-1">Directeurs de travaux, gérants de quincaillerie et responsables de flotte témoignent de leur gain de marge.</p>
+          </div>
+          <div class="flex items-center gap-3">
+            <button onclick="openReviewModal()" class="bg-orange-500 hover:bg-orange-600 text-white font-bold px-4 py-2.5 rounded-xl text-xs flex items-center space-x-2 transition shadow-md shadow-orange-500/25 cursor-pointer">
+              <i class="fa-solid fa-pen-to-square"></i>
+              <span>Donner mon avis</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- STATS DE SATISFACTION -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-white border border-slate-200 rounded-2xl p-4 sm:p-5">
+          <div class="text-center p-2">
+            <div class="text-2xl sm:text-3xl font-black text-orange-600">4.9<span class="text-sm font-semibold text-slate-500">/5</span></div>
+            <div class="flex justify-center text-amber-400 text-xs my-1">
+              <i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i>
+            </div>
+            <div class="text-[11px] text-slate-500 font-medium">Note moyenne clients</div>
+          </div>
+          <div class="text-center p-2 border-l border-slate-100">
+            <div class="text-2xl sm:text-3xl font-black text-slate-900">98%</div>
+            <div class="text-emerald-600 text-xs my-1 font-bold"><i class="fa-solid fa-thumbs-up"></i> Recommandé</div>
+            <div class="text-[11px] text-slate-500 font-medium">Satisfaction globale</div>
+          </div>
+          <div class="text-center p-2 border-l border-slate-100">
+            <div class="text-2xl sm:text-3xl font-black text-slate-900">+120</div>
+            <div class="text-orange-600 text-xs my-1 font-bold"><i class="fa-solid fa-truck-pickup"></i> Flottes & Dépôts</div>
+            <div class="text-[11px] text-slate-500 font-medium">Équipés au Sénégal</div>
+          </div>
+          <div class="text-center p-2 border-l border-slate-100">
+            <div class="text-2xl sm:text-3xl font-black text-emerald-600">-18%</div>
+            <div class="text-emerald-700 text-xs my-1 font-bold"><i class="fa-solid fa-arrow-trend-down"></i> Pertes & vols</div>
+            <div class="text-[11px] text-slate-500 font-medium">Carburant et matériaux</div>
+          </div>
+        </div>
+
+        <!-- LISTE DYNAMIQUE DES AVIS -->
+        <div id="reviews-container" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <!-- Injecté dynamiquement par renderReviews() -->
+        </div>
+      </div>
+
       <!-- QUESTIONS FRÉQUENTES -->
       <div class="space-y-4">
         <h2 class="text-2xl font-black text-slate-900">Questions fréquentes</h2>
@@ -777,6 +828,49 @@
           </table>
         </div>
         <p class="text-[11px] text-slate-600">Score = 100, moins 10 points par panne, moins l’écart de consommation (litres aux 100 km) avec la moyenne des chauffeurs. Plus les pleins et les voyages sont saisis régulièrement, plus le classement est juste.</p>
+      </div>
+
+      <!-- JOURNAL DÉTAILLÉ DES VOYAGES, TOURS & LIEUX DESSERVIS -->
+      <div class="bg-white border border-slate-200 rounded-2xl p-6 space-y-4">
+        <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
+          <div>
+            <h3 class="text-base font-bold text-slate-900 flex items-center space-x-2">
+              <i class="fa-solid fa-route text-amber-600"></i>
+              <span>Journal des Voyages, Tours & Lieux Desservis</span>
+            </h3>
+            <p class="text-xs text-slate-500 mt-0.5">Historique des rotations : lieu de départ (chargement/carrière), lieu d'arrivée (chantier/client) et distances.</p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <select id="filter-trips-truck" onchange="renderTripsJournal()" class="bg-slate-100 text-slate-900 text-xs font-bold rounded-lg px-3 py-2 border border-slate-300 focus:outline-none focus:border-amber-500">
+              <option value="all">Tous les camions</option>
+            </select>
+            <button onclick="openQuickTripModal()" class="bg-amber-600 hover:bg-amber-500 text-white font-bold px-3.5 py-2 rounded-xl text-xs flex items-center space-x-1.5 transition cursor-pointer">
+              <i class="fa-solid fa-plus text-xs"></i>
+              <span>Saisir un voyage / tour</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs">
+            <thead class="bg-slate-50 text-slate-600 uppercase font-semibold">
+              <tr>
+                <th class="p-3">Date</th>
+                <th class="p-3">Camion</th>
+                <th class="p-3">Chauffeur</th>
+                <th class="p-3">Nombre de tours</th>
+                <th class="p-3">Lieu de départ (chargement)</th>
+                <th class="p-3">Lieu d'arrivée (destination)</th>
+                <th class="p-3">Distance</th>
+                <th class="p-3">Observations</th>
+                <th class="p-3 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody id="trips-journal-body" class="divide-y divide-slate-200 text-slate-700">
+              <!-- Dynamique via renderTripsJournal() -->
+            </tbody>
+          </table>
+        </div>
       </div>
 
     </section>
