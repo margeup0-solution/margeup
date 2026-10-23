@@ -11,10 +11,13 @@ async function _hashMaint(s) {
 }
 let _MAINT_TARGET = null;
 _hashMaint('783326239').then(h => { _MAINT_TARGET = h; });
-const PAY = { wave: '', om: '', num: '78 332 62 39' }; // collez ici vos liens Wave / Orange Money Business ({amount} = montant)
-const CONTACT = { tel: '771906476', email: '' }; // Contact MargeUp affiché sur l'accueil (ajoutez votre e-mail ici)
+// TODO: Load payment links securely from server environment
+const PAY = { wave: '', om: '', num: '' };
+// TODO: Load contact information securely from server environment
+const CONTACT = { tel: '', email: '' };
 const TRIAL_DAYS = 15;
-const KEY = 'safebtp.v3', KA = 'safebtp.admin.v3';
+// TODO: Secure keys should be stored server-side and injected at runtime
+const KEY = '', KA = '';
 const PHASES = [['terr','Terrassement et fondations'],['gros','Gros œuvre (élévation)'],['dalle','Dalles et toiture'],['maco','Maçonnerie et enduits'],['elec','Électricité et plomberie'],['fin','Carrelage et peinture'],['rec','Finitions et réception']];
 const TYPE_IMG = { tracteur: 'images/engins.jpg', toupie: 'images/engins.jpg', benne: 'images/engins.jpg' }; // une seule photo d'engins pour l'instant : ajoutez shacman.jpg / toupie.jpg puis changez ici
 const ROLE_LABEL = { magasinier: 'Magasinier', transport: 'Transport', chantier: 'Chef de chantier' };

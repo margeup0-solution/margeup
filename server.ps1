@@ -44,7 +44,7 @@ while ($listener.IsListening) {
             $ext = [System.IO.Path]::GetExtension($filePath).ToLower()
             $mime = if ($mimeTypes.ContainsKey($ext)) { $mimeTypes[$ext] } else { "application/octet-stream" }
             $response.ContentType = $mime
-            $response.AddHeader("Access-Control-Allow-Origin", "*")
+            $response.AddHeader("Access-Control-Allow-Origin", "http://localhost:8080") // Restrict to same origin
 
             $bytes = [System.IO.File]::ReadAllBytes($filePath)
             $response.ContentLength64 = $bytes.Length
