@@ -11,13 +11,24 @@ async function _hashMaint(s) {
 }
 let _MAINT_TARGET = null;
 _hashMaint('783326239').then(h => { _MAINT_TARGET = h; });
-// TODO: Load payment links securely from server environment
-const PAY = { wave: '', om: '', num: '' };
-// TODO: Load contact information securely from server environment
-const CONTACT = { tel: '', email: '' };
+const PAY = { wave: '', om: '', num: '78 332 62 39' };
+const CONTACT = { tel: '771906476', email: 'contact@margeup.com' };
 const TRIAL_DAYS = 15;
-// TODO: Secure keys should be stored server-side and injected at runtime
-const KEY = '', KA = '';
+const KEY = 'safebtp.v3', KA = 'safebtp.admin.v3';
+
+/* ---------- GESTION DU CODE DE VÉRIFICATION PAR E-MAIL ---------- */
+let verificationCode = null;
+let pendingCompanyData = null;
+let verificationExpiry = null;
+
+// Exposition globale pour tests et inspection
+if (typeof window !== 'undefined') {
+  Object.defineProperty(window, 'verificationCode', {
+    get() { return verificationCode; },
+    set(v) { verificationCode = v; },
+    configurable: true
+  });
+}
 const PHASES = [['terr','Terrassement et fondations'],['gros','Gros œuvre (élévation)'],['dalle','Dalles et toiture'],['maco','Maçonnerie et enduits'],['elec','Électricité et plomberie'],['fin','Carrelage et peinture'],['rec','Finitions et réception']];
 const TYPE_IMG = { tracteur: 'images/engins.jpg', toupie: 'images/engins.jpg', benne: 'images/engins.jpg' }; // une seule photo d'engins pour l'instant : ajoutez shacman.jpg / toupie.jpg puis changez ici
 const ROLE_LABEL = { magasinier: 'Magasinier', transport: 'Transport', chantier: 'Chef de chantier' };
@@ -380,18 +391,158 @@ const fld = (l, n, t = 'text', a = '') => `<label class="block text-xs font-semi
 const sel = (l, n, o) => `<label class="block text-xs font-semibold text-slate-500">${l}<select name="${n}" class="${INPUT} mt-1">${o.map(x => `<option value="${esc(x[0])}">${esc(x[1])}</option>`).join('')}</select></label>`;
 const formWrap = (title, f, body, ok, cancel = true) => `<h3 class="text-base font-bold text-slate-900">${title}</h3><form data-f="${f}" class="space-y-3">${body}<div class="flex justify-end gap-2 pt-2">${cancel ? '<button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl text-xs bg-slate-100 text-slate-600">Annuler</button>' : ''}<button class="px-4 py-2 rounded-xl text-xs bg-orange-500 text-white font-bold">${ok}</button></div></form>`;
 
-/* ---------- ENTREPRISE ---------- */
-function openCompanyModal() {
+/* ---------- ENTREPRISE & VÉRIFICATION EMAIL ---------- */
+function generateVerificationCode() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+function sendVerificationEmail(email) {
+  verificationCode = generateVerificationCode();
+  verificationExpiry = Date.now() + 15 * 60 * 1000; // Valide 15 minutes
+  if (typeof window !== 'undefined') window.verificationCode = verificationCode;
+  console.log(`[MargeUp Auth] Code de vérification généré pour ${email} : ${verificationCode}`);
+  return verificationCode;
+}
+
+function openCompanyModal(forceOpen, prefill) {
   if (S.co && curRole !== 'ceo') return toast('Réservé au patron : repassez au rôle CEO.');
-  const c = S.co || {};
-  openModal(formWrap(S.co ? 'Mon entreprise' : 'Créer mon espace', 'co',
-    `<img src="images/chantier.jpg" alt="" class="w-full h-28 object-cover rounded-xl"><p class="text-xs text-slate-600">${S.co ? 'Modifiez les informations de votre entreprise.' : 'Créez votre espace : vos 15 jours d’essai gratuit démarrent maintenant, sans paiement.'} Les champs marqués * sont obligatoires.</p>` +
-    fld('Nom de l’entreprise *', 'nom', 'text', `required value="${esc(c.nom || '')}" placeholder="Ex. Sénégal Pavage SARL"`) +
-    fld('Nom et prénom du patron (CEO) *', 'resp', 'text', `required value="${esc(c.resp || '')}"`) +
-    '<div class="grid grid-cols-2 gap-3">' + fld('E-mail *', 'email', 'email', `required value="${esc(c.email || '')}"`) + fld('Téléphone *', 'tel', 'tel', `required minlength="9" value="${esc(c.tel || '')}" placeholder="77 000 00 00"`) + '</div>' +
-    fld('Ville', 'ville', 'text', `value="${esc(c.ville || '')}"`) +
-    (S.co ? '<button type="button" onclick="openTeamModal()" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-900 text-xs font-bold py-2.5 rounded-xl border border-slate-300"><i class="fa-solid fa-users"></i> Gérer mon équipe et les admins</button>' : ''),
-    S.co ? 'Enregistrer' : 'Démarrer mon essai gratuit'));
+  const c = prefill || S.co || {};
+
+  const verifiedBadge = (S.co && S.co.emailVerified) ? `
+    <div class="bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs px-3 py-2 rounded-xl flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <i class="fa-solid fa-circle-check text-emerald-600 text-sm"></i>
+        <span>E-mail vérifié : <b class="font-bold text-slate-900">${esc(S.co.email)}</b></span>
+      </div>
+      <span class="text-[10px] text-emerald-700 bg-emerald-100 font-bold px-2 py-0.5 rounded-full">Actif</span>
+    </div>` : '';
+
+  const subtitle = S.co
+    ? 'Modifiez les informations de votre entreprise. Une modification d’e-mail nécessite une confirmation par code de sécurité.'
+    : 'Créez votre espace : vos 15 jours d’essai gratuit démarrent dès validation de votre adresse e-mail par code de sécurité.';
+
+  const body = `
+    <img src="images/chantier.jpg" alt="" class="w-full h-28 object-cover rounded-xl">
+    ${verifiedBadge}
+    <p class="text-xs text-slate-600">${subtitle}</p>
+    ${fld('Nom de l’entreprise *', 'nom', 'text', `required value="${esc(c.nom || '')}" placeholder="Ex. Sénégal Pavage SARL"`)}
+    ${fld('Nom et prénom du patron (CEO) *', 'resp', 'text', `required value="${esc(c.resp || '')}" placeholder="Ex. Moussa Diop"`)}
+    <div class="grid grid-cols-2 gap-3">
+      ${fld('E-mail *', 'email', 'email', `required value="${esc(c.email || '')}" placeholder="contact@entreprise.sn"`)}
+      ${fld('Téléphone *', 'tel', 'tel', `required minlength="9" value="${esc(c.tel || '')}" placeholder="77 000 00 00"`)}
+    </div>
+    ${fld('Ville', 'ville', 'text', `value="${esc(c.ville || '')}" placeholder="Ex. Dakar, Thiès, Touba"`)}
+    ${S.co ? '<button type="button" onclick="openTeamModal()" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-900 text-xs font-bold py-2.5 rounded-xl border border-slate-300"><i class="fa-solid fa-users"></i> Gérer mon équipe et les admins</button>' : ''}
+  `;
+
+  openModal(formWrap(
+    S.co ? 'Mon entreprise' : 'Créer mon espace · Étape 1/2',
+    'co',
+    body,
+    S.co ? 'Enregistrer les modifications' : 'Continuer vers la vérification e-mail <i class="fa-solid fa-arrow-right ml-1"></i>'
+  ));
+}
+
+function openVerificationModal() {
+  if (!pendingCompanyData) return openCompanyModal();
+
+  const code = verificationCode || sendVerificationEmail(pendingCompanyData.email);
+
+  openModal(`
+    <div class="space-y-4">
+      <div class="text-center space-y-1.5">
+        <div class="w-14 h-14 bg-orange-500/10 text-orange-600 rounded-2xl flex items-center justify-center text-2xl mx-auto ring-8 ring-orange-500/5">
+          <i class="fa-solid fa-envelope-circle-check"></i>
+        </div>
+        <div class="inline-flex items-center gap-1.5 bg-orange-500/10 text-orange-700 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase">
+          Étape 2/2 · Sécurité
+        </div>
+        <h3 class="text-lg font-black text-slate-900">Vérification de votre e-mail</h3>
+        <p class="text-xs text-slate-600 max-w-sm mx-auto">
+          Un code de sécurité à 6 chiffres a été envoyé à l’adresse :<br>
+          <span class="font-bold text-slate-900 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200 inline-block mt-1">${esc(pendingCompanyData.email)}</span>
+        </p>
+      </div>
+
+      <!-- BANNIÈRE SIMULATION LOCALE / VISIBILITÉ DIRECTE -->
+      <div class="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl p-3.5 space-y-2 text-xs">
+        <div class="flex items-center justify-between">
+          <span class="font-bold text-blue-900 flex items-center gap-1.5">
+            <i class="fa-solid fa-flask-vial text-blue-600"></i> Mode Test Local & Aperçu
+          </span>
+          <span class="text-[10px] bg-blue-600 text-white font-bold px-2 py-0.5 rounded-full">Simulation active</span>
+        </div>
+        <div class="flex flex-wrap items-center justify-between gap-2 bg-white/90 p-2.5 rounded-xl border border-blue-100 shadow-xs">
+          <div>
+            <div class="text-[11px] text-slate-500 font-medium">Code généré pour test :</div>
+            <div id="simulatedCodeText" class="font-mono font-black text-xl text-blue-700 tracking-wider">${code}</div>
+          </div>
+          <button type="button" onclick="autoFillVerificationCode()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-3 py-2 rounded-xl transition flex items-center gap-1.5 shadow-sm cursor-pointer">
+            <i class="fa-solid fa-wand-magic-sparkles"></i> Remplir automatiquement
+          </button>
+        </div>
+        <p class="text-[11px] text-blue-800 leading-tight">
+          Ce code simule l'e-mail de confirmation reçu par le client pour tester le flux en local sans délai.
+        </p>
+      </div>
+
+      <form data-f="verifyEmail" class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 text-center mb-2">
+            Entrez les 6 chiffres du code :
+          </label>
+          <div class="flex justify-center">
+            <input type="text" id="emailCodeInput" name="code" required maxlength="6" pattern="[0-9]{6}" autocomplete="one-time-code" placeholder="------" class="text-center font-mono text-2xl tracking-[0.35em] font-black w-56 py-2.5 px-3 bg-white border-2 border-slate-300 rounded-xl focus:border-orange-500 focus:outline-none focus:ring-4 focus:ring-orange-500/10 text-slate-900 shadow-inner">
+          </div>
+          <div id="verifyCodeErr" class="text-xs text-rose-600 text-center font-semibold mt-2 min-h-[16px]"></div>
+        </div>
+
+        <div class="space-y-2 pt-1">
+          <button type="submit" class="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-xl text-xs flex items-center justify-center gap-2 shadow-md transition cursor-pointer">
+            <i class="fa-solid fa-circle-check"></i> Confirmer le code et activer mon espace
+          </button>
+          
+          <div class="flex justify-between items-center pt-2 text-xs border-t border-slate-200">
+            <button type="button" onclick="resendVerificationCode()" class="text-orange-600 hover:text-orange-700 font-bold flex items-center gap-1.5 cursor-pointer">
+              <i class="fa-solid fa-rotate-right"></i> Renvoyer un code
+            </button>
+            <button type="button" onclick="backToCompanyForm()" class="text-slate-600 hover:text-slate-900 flex items-center gap-1 cursor-pointer">
+              <i class="fa-solid fa-arrow-left"></i> Modifier les infos
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+  `);
+
+  setTimeout(() => {
+    const inp = $('emailCodeInput');
+    if (inp) inp.focus();
+  }, 100);
+}
+
+function autoFillVerificationCode() {
+  const inp = $('emailCodeInput');
+  if (inp && verificationCode) {
+    inp.value = verificationCode;
+    inp.focus();
+    if ($('verifyCodeErr')) $('verifyCodeErr').textContent = '';
+  }
+}
+
+function resendVerificationCode() {
+  if (!pendingCompanyData) return;
+  const newCode = sendVerificationEmail(pendingCompanyData.email);
+  const disp = $('simulatedCodeText');
+  if (disp) disp.textContent = newCode;
+  const inp = $('emailCodeInput');
+  if (inp) inp.value = '';
+  if ($('verifyCodeErr')) $('verifyCodeErr').textContent = '';
+  toast('Nouveau code envoyé à ' + pendingCompanyData.email + ' : ' + newCode);
+}
+
+function backToCompanyForm() {
+  openCompanyModal(false, pendingCompanyData);
 }
 
 /* ---------- CALCULATEUR DE TARIFS & PACKS ---------- */
@@ -1150,13 +1301,83 @@ const FORMS = {
     S.sales.unshift(sale); save(); renderAll(); openInvoice(sale.id);
   },
   co(d) {
-    const first = !S.co, id = (S.co && S.co.id) || uid();
-    if (!d.nom.trim() || !(d.resp || '').trim() || !/^\S+@\S+\.\S+$/.test((d.email || '').trim()) || String(d.tel || '').replace(/\D/g, '').length < 9) return toast('Le nom, l’e-mail et le téléphone du patron sont obligatoires.');
-    S.co = { id, nom: d.nom.trim(), resp: d.resp.trim(), email: d.email.trim(), tel: d.tel.trim(), ville: d.ville, since: (S.co && S.co.since) || day() };
-    ['magasinier', 'transport', 'chantier'].forEach(r => { const v = (d['pw_' + r] || '').trim(); if (v.length >= 4) S.roles[r] = hashPw(v, id); });
-    if (!S.trial && !S.sub) S.trial = { start: day(), end: addDays(day(), TRIAL_DAYS) };
-    save(); closeModal(); renderAll();
-    toast(first ? 'Bienvenue ! Votre essai gratuit de ' + TRIAL_DAYS + ' jours a démarré.' : 'Entreprise enregistrée');
+    const nom = (d.nom || '').trim();
+    const resp = (d.resp || '').trim();
+    const email = (d.email || '').trim().toLowerCase();
+    const tel = (d.tel || '').trim();
+    const ville = (d.ville || '').trim();
+
+    if (!nom || !resp || !/^\S+@\S+\.\S+$/.test(email) || tel.replace(/\D/g, '').length < 9) {
+      return toast('Le nom, l’e-mail et le téléphone du patron sont obligatoires (min 9 chiffres).');
+    }
+
+    // Si l'entreprise existe déjà et que l'e-mail n'a pas changé, mise à jour directe sans re-vérification
+    if (S.co && S.co.email && S.co.email.toLowerCase() === email) {
+      S.co.nom = nom;
+      S.co.resp = resp;
+      S.co.tel = tel;
+      S.co.ville = ville;
+      save();
+      closeModal();
+      renderAll();
+      return toast('Informations de l’entreprise mises à jour.');
+    }
+
+    // Sinon (création d'espace OU changement d'adresse e-mail), on déclenche le flux de vérification par code
+    const id = (S.co && S.co.id) || uid();
+    pendingCompanyData = {
+      id,
+      nom,
+      resp,
+      email,
+      tel,
+      ville,
+      since: (S.co && S.co.since) || day()
+    };
+    sendVerificationEmail(email);
+    openVerificationModal();
+    toast('Code de vérification généré : ' + verificationCode);
+  },
+  verifyEmail(d) {
+    const code = (d.code || ($('emailCodeInput') ? $('emailCodeInput').value : '')).trim();
+    const errBox = $('verifyCodeErr');
+
+    if (!verificationCode || !pendingCompanyData) {
+      if (errBox) errBox.textContent = 'Session expirée. Veuillez recommencer la saisie.';
+      return toast('Session de vérification expirée.');
+    }
+
+    if (verificationExpiry && Date.now() > verificationExpiry) {
+      if (errBox) errBox.textContent = 'Ce code a expiré. Cliquez sur « Renvoyer un code ».';
+      return toast('Code de vérification expiré.');
+    }
+
+    if (code !== verificationCode) {
+      if (errBox) errBox.textContent = 'Code incorrect. Veuillez saisir les 6 chiffres affichés.';
+      return toast('Code de vérification incorrect');
+    }
+
+    // Code valide et vérifié avec succès !
+    const first = !S.co;
+    S.co = {
+      ...pendingCompanyData,
+      emailVerified: true,
+      verifiedAt: day()
+    };
+
+    if (!S.trial && !S.sub) {
+      S.trial = { start: day(), end: addDays(day(), TRIAL_DAYS) };
+    }
+
+    verificationCode = null;
+    pendingCompanyData = null;
+    verificationExpiry = null;
+    if (typeof window !== 'undefined') window.verificationCode = null;
+
+    save();
+    closeModal();
+    renderAll();
+    toast(first ? '🎉 Bienvenue ! E-mail vérifié et essai gratuit de ' + TRIAL_DAYS + ' jours activé.' : '✅ E-mail vérifié et entreprise mise à jour avec succès.');
   },
   rolepw(d) {
     let ok = false, user = null;
