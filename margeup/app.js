@@ -12,7 +12,7 @@ async function _hashMaint(s) {
 let _MAINT_TARGET = null;
 _hashMaint('783326239').then(h => { _MAINT_TARGET = h; });
 const PAY = { wave: '', om: '', num: '78 332 62 39' };
-const CONTACT = { tel: '771906476', email: 'contact@margeup.com' };
+const CONTACT = { tel: '771906476', email: 'margeup0@gmail.com' };
 const TRIAL_DAYS = 15;
 const KEY = 'safebtp.v3', KA = 'safebtp.admin.v3';
 
@@ -49,6 +49,47 @@ function toast(t) {
   if (!e) { e = document.createElement('div'); e.id = 'toast'; e.className = 'fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-800 border border-slate-700 text-white text-xs font-semibold px-4 py-2.5 rounded-xl z-[70] hidden'; document.body.appendChild(e); }
   e.textContent = t; e.classList.remove('hidden'); clearTimeout(e._t); e._t = setTimeout(() => e.classList.add('hidden'), 3200);
 }
+
+/* ---------- GESTION DES UNITÉS & CONVERSIONS QUINCAILLERIE ---------- */
+// Règle d'or sénégalaise BTP : 1 tonne de ciment = 20 sacs de 50 kg
+function isCementOrTonne(item) {
+  if (!item) return false;
+  const n = (item.name || '').toLowerCase();
+  const u = (item.unit || '').toLowerCase();
+  const c = (item.cat || '').toLowerCase();
+  return n.includes('ciment') || u.includes('tonne') || c.includes('ciment') || item.uom_ratio === 20;
+}
+
+function formatMaterialQty(itemOrQty, unitName) {
+  let qty = typeof itemOrQty === 'object' ? (itemOrQty.qty || 0) : Number(itemOrQty || 0);
+  let u = typeof itemOrQty === 'object' ? (itemOrQty.unit || '').toLowerCase() : (unitName || '').toLowerCase();
+  let name = typeof itemOrQty === 'object' ? (itemOrQty.name || '').toLowerCase() : '';
+
+  const isTonneOrSac = u.includes('tonne') || u.includes('sac') || name.includes('ciment');
+  if (!isTonneOrSac) {
+    return fm(qty) + ' ' + (typeof itemOrQty === 'object' ? esc(itemOrQty.unit || 'unités') : (unitName || ''));
+  }
+
+  // 1 tonne = 20 sacs de 50 kg
+  let totalSacs = 0;
+  if (u.includes('tonne')) {
+    totalSacs = Math.round(qty * 20 * 100) / 100;
+  } else {
+    totalSacs = Math.round(qty * 100) / 100;
+  }
+
+  const tonnes = Math.floor(totalSacs / 20);
+  const sacs = Math.round((totalSacs % 20) * 10) / 10;
+
+  if (tonnes > 0 && sacs > 0) {
+    return tonnes + ' tonne' + (tonnes > 1 ? 's' : '') + ' et ' + sacs + ' sac' + (sacs > 1 ? 's' : '') + ' (' + fm(totalSacs) + ' sacs)';
+  } else if (tonnes > 0 && sacs === 0) {
+    return fm(tonnes) + ' tonne' + (tonnes > 1 ? 's' : '') + ' (' + fm(totalSacs) + ' sacs)';
+  } else {
+    return sacs + ' sac' + (sacs > 1 ? 's' : '');
+  }
+}
+
 
 /* ---------- DONNÉES ---------- */
 function defaultReviews() {
@@ -106,9 +147,9 @@ function seed() {
     reviews: defaultReviews(),
     depots: [{ id: 'd1', nom: 'Quincaillerie principale' }],
     sales: [
-      { id: 'v3', num: 'FAC-2026-0003', depot: 'd1', date: day(-1), stype: 'detail', kind: 'particulier', client: { nom: 'dangote', tel: '' }, pay: 'Espèces', lines: [{ item: 1, name: 'ciment', unit: 'tonne', qty: 2, pu: 4250 }], total: 8500 },
-      { id: 'v1', num: 'FAC-2026-0001', depot: 'd1', date: day(-2), stype: 'detail', kind: 'particulier', client: { nom: 'Client comptoir', tel: '' }, pay: 'Espèces', lines: [{ item: 1, name: 'ciment', unit: 'sacs', qty: 5, pu: 4500 }], total: 22500 },
-      { id: 'v2', num: 'FAC-2026-0002', depot: 'd1', date: day(-2), stype: 'gros', kind: 'entreprise', client: { nom: 'Entreprise Sow et Frères', tel: '771234567' }, pay: 'Wave', lines: [{ item: 1, name: 'ciment', unit: 'tonne', qty: 3, pu: 3800 }, { item: 3, name: 'Tuyaux PEHD Pression Ø110mm', unit: 'mètres', qty: 50, pu: 7000 }], total: 1190000 }
+      { id: 'v3', num: 'FAC-2026-0003', depot: 'd1', date: day(-1), stype: 'detail', kind: 'particulier', client: { nom: 'Client comptoir Dangote', tel: '' }, pay: 'Espèces', lines: [{ item: 1, name: 'Ciment Dangote CPJ 42.5', unit: 'sacs', qty: 2, pu: 4250 }], total: 8500 },
+      { id: 'v1', num: 'FAC-2026-0001', depot: 'd1', date: day(-2), stype: 'detail', kind: 'particulier', client: { nom: 'Client comptoir', tel: '' }, pay: 'Espèces', lines: [{ item: 1, name: 'Ciment Dangote CPJ 42.5', unit: 'sacs', qty: 5, pu: 4500 }], total: 22500 },
+      { id: 'v2', num: 'FAC-2026-0002', depot: 'd1', date: day(-2), stype: 'gros', kind: 'entreprise', client: { nom: 'Entreprise Sow et Frères', tel: '771234567' }, pay: 'Wave', lines: [{ item: 1, name: 'Ciment Dangote CPJ 42.5 (3 tonnes / 60 sacs)', unit: 'sacs', qty: 60, pu: 3800 }, { item: 3, name: 'Tuyaux PEHD Pression Ø110mm', unit: 'mètres', qty: 50, pu: 7000 }], total: 578000 }
     ],
     chantiers: [
       { id: 'lycee', nom: 'Chantier Lycée', budget: 95000000 },
@@ -117,7 +158,7 @@ function seed() {
       { id: 'thies', nom: 'Chantier Autoroute Thiès-Touba', budget: 85000000 }
     ],
     inventory: [
-      { id: 1, name: 'ciment', cat: 'dangote', qty: 24, unit: 'tonne', price: 4250, priceGros: 3800, depot: 'd1', lastChantier: 'lycee', sale_unit: 'sac 50kg', uom_ratio: 20, seuil: 5 },
+      { id: 1, name: 'Ciment Dangote CPJ 42.5', cat: 'Cimenterie', qty: 24, unit: 'tonne', price: 4250, priceGros: 3800, depot: 'd1', lastChantier: 'lycee', sale_unit: 'sac 50kg', uom_ratio: 20, seuil: 5 },
       { id: 2, name: 'Fer à Béton FeE500 Ø12mm', cat: 'Acierie', qty: 45, unit: 'tonnes', price: 480000, priceGros: 460000, depot: 'd1', lastChantier: 'Tour Diamniadio', sale_unit: 'barre 6m', uom_ratio: 1, seuil: 5 },
       { id: 3, name: 'Tuyaux PEHD Pression Ø110mm', cat: 'Plomberie/PEHD', qty: 180, unit: 'mètres', price: 7500, priceGros: 7000, depot: 'd1', lastChantier: 'BRT Dakar', seuil: 20 },
       { id: 4, name: 'Sable de Dune (Camion 16m3)', cat: 'Agrégats', qty: 25, unit: 'camions', price: 90000, priceGros: 85000, depot: 'd1', lastChantier: 'Thiès Autoroute', seuil: 3 }
@@ -757,12 +798,35 @@ function renderInventory() {
   $('depot-select').innerHTML = D.map(d => `<option value="${esc(d.id)}" ${d.id === selDepot ? 'selected' : ''}>${esc(d.nom)}</option>`).join('');
   const q = ($('stock-search').value || '').toLowerCase(), tb = $('inventory-table-body');
   const L = S.inventory.filter(i => i.depot === selDepot && (!q || (i.name + ' ' + i.cat).toLowerCase().includes(q)));
-  tb.innerHTML = L.length ? L.map(i => `<tr class="hover:bg-slate-50">
-    <td class="p-4 font-bold text-slate-900">${esc(i.name)}</td>
-    <td class="p-4"><span class="bg-purple-500/10 text-purple-700 px-2 py-0.5 rounded border border-purple-500/20 text-[11px]">${esc(i.cat)}</span></td>
-    <td class="p-4 font-bold ${i.qty <= (i.seuil || 0) ? 'text-amber-700' : 'text-emerald-700'}">${fm(i.qty)} ${esc(i.unit)}</td>
-    <td class="p-4">${fm(i.price)} FCFA<div class="text-[10px] text-slate-600">Gros : ${fm(i.priceGros || i.price)} FCFA</div></td><td class="p-4 text-slate-600">${esc(i.lastChantier || '—')}</td>
-    <td class="p-4 text-right"><button onclick="openDispatchModal(${i.id})" class="bg-purple-600 hover:bg-purple-500 text-white text-[11px] px-2.5 py-1 rounded-lg">Expédier vers Chantier</button></td></tr>`).join('')
+  tb.innerHTML = L.length ? L.map(i => {
+    const isTonne = isCementOrTonne(i);
+    const formattedQty = formatMaterialQty(i);
+    let priceDisplay = '';
+    if (isTonne) {
+      priceDisplay = `<div><b class="text-slate-900">${fm(i.price)} FCFA</b> <span class="text-[11px] text-slate-500">/ sac</span></div>
+        <div class="text-[10px] text-slate-500 font-medium">Tonne (20 sacs) : ${fm(i.price * 20)} FCFA</div>
+        <div class="text-[10px] text-purple-700 font-medium">Gros : ${fm(i.priceGros || i.price)} FCFA/sac (${fm((i.priceGros || i.price) * 20)} F/t)</div>`;
+    } else {
+      priceDisplay = `<div><b class="text-slate-900">${fm(i.price)} FCFA</b></div><div class="text-[10px] text-slate-500">Gros : ${fm(i.priceGros || i.price)} FCFA</div>`;
+    }
+    return `<tr class="hover:bg-slate-50">
+      <td class="p-4">
+        <div class="font-bold text-slate-900">${esc(i.name)}</div>
+        ${isTonne ? '<span class="inline-flex items-center gap-1 text-[10px] bg-amber-50 text-amber-800 font-bold px-2 py-0.5 rounded-full border border-amber-200 mt-0.5"><i class="fa-solid fa-scale-balanced text-[9px]"></i> 1 tonne = 20 sacs</span>' : ''}
+      </td>
+      <td class="p-4"><span class="bg-purple-500/10 text-purple-700 px-2 py-0.5 rounded border border-purple-500/20 text-[11px]">${esc(i.cat)}</span></td>
+      <td class="p-4 font-bold ${i.qty <= (i.seuil || 0) ? 'text-amber-700' : 'text-emerald-700'}">
+        <div class="text-sm font-black">${formattedQty}</div>
+      </td>
+      <td class="p-4">${priceDisplay}</td>
+      <td class="p-4 text-slate-600">${esc(i.lastChantier || '—')}</td>
+      <td class="p-4 text-right">
+        <button onclick="openDispatchModal(${i.id})" class="bg-purple-600 hover:bg-purple-500 text-white text-[11px] font-bold px-3 py-1.5 rounded-lg shadow-sm">
+          Expédier vers Chantier
+        </button>
+      </td>
+    </tr>`;
+  }).join('')
     : '<tr><td colspan="6" class="p-6 text-center text-slate-500">Aucun article. Cliquez sur « Entrée en Stock / Nouvel Article ».</td></tr>';
   renderSales();
 }
@@ -772,17 +836,56 @@ function openDepotModal() {
   openModal(formWrap('Nouvelle quincaillerie', 'depot', fld('Nom de la quincaillerie ou du dépôt', 'nom', 'text', 'required placeholder="Quincaillerie Rufisque"'), 'Créer'));
 }
 function openStockModal() {
-  openModal(formWrap('Entrée en stock', 'stock',
-    fld('Nom de l’article', 'name', 'text', 'required placeholder="Ciment CPJ 35"') +
-    '<div class="grid grid-cols-2 gap-3">' + fld('Catégorie', 'cat', 'text', 'placeholder="Cimenterie"') + fld('Unité', 'unit', 'text', 'placeholder="sacs, m, tonnes"') + fld('Quantité reçue', 'qty', 'number', 'required min="0" step="any"') + fld('Prix détail (FCFA)', 'price', 'number', 'min="0"') + fld('Prix gros (FCFA)', 'priceGros', 'number', 'min="0"') + '</div>' +
-    '<p class="text-[11px] text-slate-500">Si l’article existe déjà (même nom), la quantité s’ajoute au stock.</p>', 'Enregistrer'));
+  openModal(formWrap('Entrée en stock / Nouvel arrivage', 'stock',
+    fld('Nom de l’article *', 'name', 'text', 'required placeholder="Ex. Ciment Dangote CPJ 42.5"') +
+    '<div class="grid grid-cols-2 gap-3">' +
+      fld('Catégorie', 'cat', 'text', 'placeholder="Ex. Cimenterie, Plomberie..."') +
+      sel('Unité de référence', 'unit', [
+        ['tonne', 'Tonnes (1 t = 20 sacs)'],
+        ['sacs', 'Sacs de 50 kg'],
+        ['mètres', 'Mètres (m)'],
+        ['camions', 'Camions'],
+        ['unités', 'Unités / Pièces']
+      ]) +
+    '</div>' +
+    '<div class="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 text-xs text-amber-900 space-y-1">' +
+      '<div class="font-bold flex items-center gap-1.5"><i class="fa-solid fa-scale-balanced text-amber-600"></i> Règle de conversion MargeUp : 1 tonne = 20 sacs (50 kg)</div>' +
+      '<div>Pour le ciment, vous pouvez saisir en tonnes ou en sacs. L\'addition s\'effectuera toujours de façon exacte sans mélange erroné.</div>' +
+    '</div>' +
+    '<div class="grid grid-cols-2 gap-3">' +
+      fld('Quantité reçue *', 'qty', 'number', 'required min="0.01" step="any" placeholder="Ex. 24 ou 500"') +
+      sel('Unité saisie pour cet arrivage *', 'input_unit', [
+        ['tonne', 'Tonnes (1 t = 20 sacs)'],
+        ['sacs', 'Sacs de 50 kg (20 sacs = 1 t)'],
+        ['unités', 'Même unité que l\'article']
+      ]) +
+    '</div>' +
+    '<div class="grid grid-cols-2 gap-3">' +
+      fld('Prix détail (FCFA / unité ou sac)', 'price', 'number', 'min="0" placeholder="Ex. 4250"') +
+      fld('Prix gros (FCFA / unité ou sac)', 'priceGros', 'number', 'min="0" placeholder="Ex. 3800"') +
+    '</div>' +
+    '<p class="text-[11px] text-slate-500">Pour le ciment : 1 sac = 4 250 F (soit 1 tonne = 20 sacs = 85 000 F).</p>',
+    'Enregistrer'));
 }
 function openDispatchModal(id) {
   const i = S.inventory.find(x => x.id == id); if (!i) return;
   if (!S.chantiers.length) return toast('Créez d’abord un chantier');
-  openModal(formWrap('Expédier : ' + esc(i.name), 'dispatch',
-    `<input type="hidden" name="id" value="${i.id}"><p class="text-xs text-slate-500">En stock : ${fm(i.qty)} ${esc(i.unit)}</p>` +
-    sel('Chantier de destination', 'chantier', S.chantiers.map(c => [c.id, c.nom])) + fld('Quantité à sortir', 'qty', 'number', `required min="0.01" max="${i.qty}" step="any"`) +
+  const isTonne = isCementOrTonne(i);
+  openModal(formWrap('Expédier vers Chantier : ' + esc(i.name), 'dispatch',
+    `<input type="hidden" name="id" value="${i.id}">
+     <div class="bg-purple-50 border border-purple-200 rounded-xl p-3 text-xs space-y-1">
+       <div>Stock disponible actuel : <b class="text-purple-900">${formatMaterialQty(i)}</b></div>
+       ${isTonne ? '<div class="text-[11px] text-purple-700 font-medium">Conversion automatique : 1 tonne = 20 sacs (50 kg)</div>' : ''}
+     </div>` +
+    sel('Chantier de destination', 'chantier', S.chantiers.map(c => [c.id, c.nom])) +
+    (isTonne ? `
+      <div class="grid grid-cols-2 gap-3">
+        ${fld('Quantité à expédier', 'qty', 'number', 'required min="0.01" step="any" placeholder="Ex. 10"')}
+        ${sel('Unité de sortie', 'dispatch_unit', [
+          ['sacs', 'Sacs de 50 kg'],
+          ['tonnes', 'Tonnes complètes']
+        ])}
+      </div>` : fld('Quantité à sortir (' + esc(i.unit) + ')', 'qty', 'number', `required min="0.01" max="${i.qty}" step="any"`)) +
     '<div id="dispErr" class="text-xs text-rose-600"></div>', 'Valider la sortie'));
 }
 
@@ -1002,13 +1105,116 @@ function renderChantierExpenses() { selChantier = $('selectedChantierFilter').va
 function renderCeo() {
   const budget = S.chantiers.reduce((s, c) => s + c.budget, 0), dep = S.expenses.reduce((s, e) => s + e.amount, 0);
   const m = day().slice(0, 7), maint = S.pannes.filter(p => (p.date || '').startsWith(m)).reduce((s, p) => s + p.cost, 0), np = S.pannes.filter(p => (p.date || '').startsWith(m)).length;
-  const card = (t, v, c, sub) => `<div class="bg-slate-100 border border-slate-200 rounded-2xl p-5 space-y-2"><span class="text-xs font-semibold text-slate-500">${t}</span><div class="text-2xl font-black ${c}">${fm(v)} <span class="text-xs font-normal text-slate-500">FCFA</span></div><div class="text-xs text-slate-500">${sub}</div></div>`;
-  $('ceo-kpis').innerHTML = card('Budget total des chantiers', budget, 'text-slate-900', S.chantiers.length + ' chantier(s)') + card('Dépenses cumulées', dep, 'text-rose-600', 'Matériaux, carburant, paie') + card('Reste à dépenser', budget - dep, budget - dep < 0 ? 'text-rose-600' : 'text-emerald-600', budget ? Math.round(dep / budget * 100) + '% du budget consommé' : '—') + card('Maintenance flotte (ce mois)', maint, 'text-amber-600', np + ' panne(s) ce mois');
-  if (typeof Chart === 'undefined') return;
-  if (c1) c1.destroy(); if (c2) c2.destroy();
-  const cats = ['Matériaux', 'Carburant', 'Main d’œuvre', 'Autres'], data = cats.map(k => S.expenses.filter(e => (e.cat || 'Autres') === k).reduce((s, e) => s + e.amount, 0));
-  c1 = new Chart($('ceoExpensesChart').getContext('2d'), { type: 'doughnut', data: { labels: cats.concat(['Maintenance flotte']), datasets: [{ data: data.concat([maint]), backgroundColor: ['#A855F7', '#F59E0B', '#3B82F6', '#64748B', '#F43F5E'] }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#64748B', font: { size: 11 } } } } } });
-  c2 = new Chart($('ceoProfitChart').getContext('2d'), { type: 'bar', data: { labels: S.chantiers.map(c => c.nom.replace('Chantier ', '')), datasets: [{ label: 'Budget (FCFA)', data: S.chantiers.map(c => c.budget), backgroundColor: '#CBD5E1' }, { label: 'Dépenses réelles', data: S.chantiers.map(c => spent(c.id)), backgroundColor: '#FF6B00' }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#64748B', font: { size: 11 } } } }, scales: { x: { ticks: { color: '#64748B' }, grid: { display: false } }, y: { ticks: { color: '#64748B' }, grid: { color: '#E2E8F0' } } } } });
+  const reste = budget - dep;
+  const ventesMois = S.sales.filter(s => (s.date || '').startsWith(m)).reduce((s, x) => s + x.total, 0);
+  const nbFactures = S.sales.filter(s => (s.date || '').startsWith(m)).length;
+
+  // 1. KPI Cards Épurées & Visuelles avec Icônes Parlantes
+  const kpiCard = (icon, iconBg, iconColor, label, value, suffix, valueColor, sub) =>
+    `<div class="bg-white border border-slate-200 rounded-2xl p-5 space-y-3 hover:shadow-md transition">
+      <div class="flex items-center gap-3">
+        <span class="w-12 h-12 rounded-2xl ${iconBg} ${iconColor} flex items-center justify-center text-xl shadow-sm">
+          <i class="${icon}"></i>
+        </span>
+        <span class="text-xs font-bold text-slate-500 uppercase tracking-wide">${label}</span>
+      </div>
+      <div class="text-2xl sm:text-3xl font-black ${valueColor}">${value} <span class="text-xs font-normal text-slate-500">${suffix}</span></div>
+      <div class="text-xs text-slate-500">${sub}</div>
+    </div>`;
+
+  $('ceo-kpis').innerHTML =
+    kpiCard('fa-solid fa-wallet', 'bg-blue-500/15', 'text-blue-600', 'Budget Total Chantiers', fm(budget), 'FCFA', 'text-slate-900', '<i class="fa-solid fa-building text-blue-500"></i> ' + S.chantiers.length + ' chantier' + (S.chantiers.length > 1 ? 's' : '')) +
+    kpiCard('fa-solid fa-arrow-trend-down', 'bg-rose-500/15', 'text-rose-600', 'Dépenses Engagées', fm(dep), 'FCFA', 'text-rose-600', (budget ? '<div class="w-full bg-slate-100 rounded-full h-1.5 mt-1"><div class="bg-rose-500 h-1.5 rounded-full" style="width:' + Math.min(100, Math.round(dep / budget * 100)) + '%"></div></div><span class="text-[10px]">' + Math.round(dep / budget * 100) + '% du budget consommé</span>' : '—')) +
+    kpiCard('fa-solid fa-piggy-bank', 'bg-emerald-500/15', 'text-emerald-600', 'Reste à Dépenser', fm(reste), 'FCFA', reste < 0 ? 'text-rose-600' : 'text-emerald-600', reste < 0 ? '<span class="text-rose-600 font-bold"><i class="fa-solid fa-triangle-exclamation"></i> Attention : dépassement</span>' : '<i class="fa-solid fa-check-circle text-emerald-500"></i> Dans les limites du budget') +
+    kpiCard('fa-solid fa-wrench', 'bg-amber-500/15', 'text-amber-600', 'Entretien Flotte (Mois)', fm(maint), 'FCFA', 'text-amber-600', '<i class="fa-solid fa-truck text-amber-500"></i> ' + np + ' panne' + (np > 1 ? 's' : '') + ' enregistrée' + (np > 1 ? 's' : ''));
+
+  // 2. Santé des Chantiers (Suivi visuel direct)
+  const healthEl = $('ceo-chantiers-health');
+  if (healthEl) {
+    if (S.chantiers.length) {
+      healthEl.innerHTML = S.chantiers.map(c => {
+        const sp = spent(c.id);
+        const pc = c.budget ? Math.min(100, Math.round(sp / c.budget * 100)) : 0;
+        const over = sp > c.budget;
+        const barColor = pc >= 90 ? 'bg-rose-500' : pc >= 70 ? 'bg-amber-500' : 'bg-emerald-500';
+        const badge = over
+          ? '<span class="inline-flex items-center gap-1 bg-rose-50 text-rose-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-rose-200"><i class="fa-solid fa-circle-exclamation"></i> Dépassement</span>'
+          : pc >= 90
+          ? '<span class="inline-flex items-center gap-1 bg-amber-50 text-amber-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-200"><i class="fa-solid fa-triangle-exclamation"></i> Budget à 90%</span>'
+          : '<span class="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-200"><i class="fa-solid fa-circle-check"></i> Dans le budget</span>';
+
+        return `<div class="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2">
+          <div class="flex items-center justify-between gap-2">
+            <div class="font-bold text-slate-900 text-sm truncate">${esc(c.nom.replace('Chantier ', ''))}</div>
+            ${badge}
+          </div>
+          <div class="w-full bg-slate-200 rounded-full h-2.5">
+            <div class="${barColor} h-2.5 rounded-full transition-all" style="width:${pc}%"></div>
+          </div>
+          <div class="flex justify-between items-center text-[11px] text-slate-600 pt-0.5">
+            <span>Dépensé : <b class="text-slate-900">${fm(sp)}</b> FCFA</span>
+            <span>Reste : <b class="${c.budget - sp < 0 ? 'text-rose-600' : 'text-emerald-700'}">${fm(c.budget - sp)}</b> FCFA</span>
+          </div>
+        </div>`;
+      }).join('');
+    } else {
+      healthEl.innerHTML = '<div class="text-center text-xs text-slate-500 py-6"><i class="fa-solid fa-building text-slate-400 text-2xl mb-2"></i><br>Aucun chantier actif. Cliquez sur « Nouveau chantier » pour démarrer le suivi.</div>';
+    }
+  }
+
+  // 3. Vue Rapide de l'Entreprise (Flotte, Carburant, Stock, Ventes)
+  const quickEl = $('ceo-quick-view');
+  if (quickEl) {
+    const fleetTotal = S.fleet.length;
+    const enPanne = S.fleet.filter(f => f.status === 'En Panne').length;
+    const carbMois = S.fleet.reduce((s, f) => s + (f.carb || []).filter(x => (x.d || '').startsWith(m)).reduce((a, x) => a + (x.amount || 0), 0), 0);
+    const stockItems = S.inventory.length;
+    const lowStock = S.inventory.filter(i => i.qty <= (i.seuil || 0)).length;
+
+    const qRow = (icon, iconBg, label, val, sub) =>
+      `<div class="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl p-3">
+        <span class="w-10 h-10 rounded-xl ${iconBg} flex items-center justify-center text-lg shrink-0">${icon}</span>
+        <div class="flex-1 min-w-0">
+          <div class="text-xs text-slate-500 font-semibold">${label}</div>
+          <div class="text-base font-black text-slate-900">${val}</div>
+        </div>
+        <div class="text-[11px] text-slate-500 text-right shrink-0">${sub}</div>
+      </div>`;
+
+    quickEl.innerHTML =
+      qRow('<i class="fa-solid fa-truck text-amber-600"></i>', 'bg-amber-500/15', 'Flotte Camions', fleetTotal + ' véhicule' + (fleetTotal > 1 ? 's' : ''), enPanne > 0 ? '<span class="text-rose-600 font-bold">' + enPanne + ' en panne</span>' : '<span class="text-emerald-700 font-bold"><i class="fa-solid fa-check"></i> Opérationnels</span>') +
+      qRow('<i class="fa-solid fa-gas-pump text-orange-600"></i>', 'bg-orange-500/15', 'Gazole ce mois', fm(carbMois) + ' FCFA', 'Consommation globale') +
+      qRow('<i class="fa-solid fa-boxes-stacked text-purple-600"></i>', 'bg-purple-500/15', 'Articles en Stock', stockItems + ' référence' + (stockItems > 1 ? 's' : ''), lowStock > 0 ? '<span class="text-amber-700 font-bold">' + lowStock + ' en alerte stock</span>' : '<span class="text-emerald-700 font-bold">Stocks suffisants</span>') +
+      qRow('<i class="fa-solid fa-cash-register text-emerald-600"></i>', 'bg-emerald-500/15', 'Ventes du Mois', fm(ventesMois) + ' FCFA', nbFactures + ' facture' + (nbFactures > 1 ? 's' : '') + ' émise' + (nbFactures > 1 ? 's' : ''));
+  }
+
+  // 4. Alertes et Points d'Attention Immédiats
+  const alertsEl = $('ceo-alerts');
+  if (alertsEl) {
+    const alerts = [];
+    S.chantiers.forEach(c => {
+      const sp = spent(c.id);
+      if (sp > c.budget) alerts.push({ icon: 'fa-solid fa-circle-exclamation', color: 'text-rose-600', bg: 'bg-rose-50 border-rose-200', text: '<b>Chantier ' + esc(c.nom) + '</b> : budget dépassé de <b class="text-rose-700">' + fm(sp - c.budget) + ' FCFA</b>.' });
+      else if (c.budget && sp / c.budget >= 0.9) alerts.push({ icon: 'fa-solid fa-triangle-exclamation', color: 'text-amber-600', bg: 'bg-amber-50 border-amber-200', text: '<b>Chantier ' + esc(c.nom) + '</b> : <b class="text-amber-700">' + Math.round(sp / c.budget * 100) + '%</b> du budget alloué a déjà été dépensé.' });
+    });
+    S.batiments.forEach(b => {
+      const t = batTime(b);
+      if (t.late) alerts.push({ icon: 'fa-solid fa-clock', color: 'text-rose-600', bg: 'bg-rose-50 border-rose-200', text: '<b>Bâtiment ' + esc(b.nom) + '</b> : retard constaté (' + t.leftTxt + ').' });
+    });
+    const unresolvedPannes = S.pannes.filter(p => p.status !== 'Terminé');
+    if (unresolvedPannes.length) alerts.push({ icon: 'fa-solid fa-wrench', color: 'text-amber-600', bg: 'bg-amber-50 border-amber-200', text: '<b>' + unresolvedPannes.length + ' camion' + (unresolvedPannes.length > 1 ? 's' : '') + ' en panne</b> : réparation requise pour relancer les rotations.' });
+    const lowItems = S.inventory.filter(i => i.qty <= (i.seuil || 0));
+    if (lowItems.length) alerts.push({ icon: 'fa-solid fa-boxes-stacked', color: 'text-purple-600', bg: 'bg-purple-50 border-purple-200', text: '<b>Stock faible</b> sur ' + lowItems.slice(0, 3).map(i => esc(i.name)).join(', ') + (lowItems.length > 3 ? '…' : '') + '.' });
+
+    if (alerts.length) {
+      alertsEl.innerHTML = alerts.map(a => `<div class="flex items-start gap-3 ${a.bg} border rounded-xl p-3 text-xs">
+        <i class="${a.icon} ${a.color} mt-0.5 text-sm"></i>
+        <span class="text-slate-800">${a.text}</span>
+      </div>`).join('');
+    } else {
+      alertsEl.innerHTML = '<div class="flex items-center gap-3 bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-xs"><i class="fa-solid fa-circle-check text-emerald-600 text-lg"></i><span class="text-emerald-800 font-bold">Situation excellente : tous les chantiers sont dans les clous et la flotte est opérationnelle.</span></div>';
+    }
+  }
 }
 
 /* ---------- VOYAGES, LIEUX & ROTATIONS FLOTTE ---------- */
@@ -1250,11 +1456,11 @@ function openReviewModal() {
 
 /* ---------- AFFICHAGE GÉNÉRAL ---------- */
 function renderDemoBar() {
-  $('demoBar').innerHTML = S.demo ? '<div class="mb-6 bg-amber-500/10 border border-amber-500/30 text-amber-700 rounded-xl p-3 text-xs flex flex-wrap items-center justify-between gap-2"><span><i class="fa-solid fa-flask"></i> Vous voyez des données d’exemple.</span><button onclick="clearDemo()" class="bg-amber-500 text-slate-950 font-bold px-3 py-1.5 rounded-lg">Commencer avec mes propres données</button></div>' : '';
+  $('demoBar').innerHTML = S.demo ? '<div class="mb-6 bg-amber-500/10 border border-amber-500/30 text-amber-700 rounded-xl p-3 text-xs flex flex-wrap items-center justify-between gap-2"><span><i class="fa-solid fa-flask"></i> Vous voyez des données d’exemple.</span><button onclick="clearDemo()" class="bg-amber-500 text-slate-950 font-bold px-3 py-1.5 rounded-lg">Remplir mes propres données</button></div>' : '';
 }
 function clearDemo() {
   if (!confirm('Effacer les données d’exemple et commencer avec les vôtres ?')) return;
-  Object.assign(S, { demo: false, inventory: [], pannes: [], expenses: [], fleet: [], chantiers: [], batiments: [] }); save(); renderAll();
+  Object.assign(S, { demo: false, inventory: [], sales: [], pannes: [], expenses: [], fleet: [], chantiers: [], batiments: [], seq: 0 }); save(); renderAll();
 }
 function renderAll() {
   $('coBtn').innerHTML = '<i class="fa-solid fa-building text-orange-600"></i> ' + esc(S.co ? S.co.nom : 'Créer mon espace');
@@ -1291,11 +1497,30 @@ const FORMS = {
   depot(d) { const x = { id: 'd' + uid(), nom: d.nom.trim() }; S.depots.push(x); selDepot = x.id; save(); closeModal(); renderAll(); toast('Quincaillerie créée'); },
   sale(d) {
     const ids = [].concat(d['item[]'] || []), qs = [].concat(d['qty[]'] || []), ps = [].concat(d['pu[]'] || []), lines = [], need = {};
-    for (let k = 0; k < ids.length; k++) { const it = S.inventory.find(x => x.id == ids[k]), q = +qs[k], pu = +ps[k]; if (!it || !(q > 0)) continue; need[it.id] = (need[it.id] || 0) + q; lines.push({ item: it.id, name: it.name, unit: it.unit, qty: q, pu }); }
+    for (let k = 0; k < ids.length; k++) {
+      const it = S.inventory.find(x => x.id == ids[k]), q = +qs[k], pu = +ps[k];
+      if (!it || !(q > 0)) continue;
+      const isTonne = isCementOrTonne(it);
+      // Pour le ciment géré en tonnes et vendu en sacs : 20 sacs = 1 tonne
+      const neededInStockUnit = isTonne ? (q / 20) : q;
+      need[it.id] = (need[it.id] || 0) + neededInStockUnit;
+      lines.push({ item: it.id, name: it.name, unit: isTonne ? 'sacs (50kg)' : it.unit, qty: q, pu });
+    }
     if (!lines.length) { $('saleErr').textContent = 'Ajoutez au moins un article.'; return; }
     if (d.kind === 'entreprise' && !(d.cnom || '').trim()) { $('saleErr').textContent = 'Le nom de l’entreprise cliente est obligatoire.'; return; }
-    for (const id in need) { const it = S.inventory.find(x => x.id == id); if (need[id] > it.qty) { $('saleErr').textContent = 'Stock insuffisant pour ' + it.name + ' : il reste ' + fm(it.qty) + ' ' + it.unit + '.'; return; } }
-    lines.forEach(l => { S.inventory.find(x => x.id == l.item).qty -= l.qty; });
+    for (const id in need) {
+      const it = S.inventory.find(x => x.id == id);
+      if (need[id] > it.qty) {
+        $('saleErr').textContent = 'Stock insuffisant pour ' + it.name + ' : il reste ' + formatMaterialQty(it) + '.';
+        return;
+      }
+    }
+    lines.forEach(l => {
+      const it = S.inventory.find(x => x.id == l.item);
+      const isTonne = isCementOrTonne(it);
+      const deducted = isTonne ? (l.qty / 20) : l.qty;
+      it.qty = Math.max(0, it.qty - deducted);
+    });
     const total = lines.reduce((s, l) => s + l.qty * l.pu, 0);
     const sale = { id: 'v' + uid(), num: 'FAC-' + day().slice(0, 4) + '-' + String(++S.seq).padStart(4, '0'), depot: selDepot, date: day(), stype: d.stype, kind: d.kind, client: { nom: (d.cnom || '').trim() || 'Client comptoir', tel: d.ctel || '' }, pay: d.pay, lines, total };
     S.sales.unshift(sale); save(); renderAll(); openInvoice(sale.id);
@@ -1388,17 +1613,81 @@ const FORMS = {
     closeModal(); enterRole(d.role); const cb = pendingRole && pendingRole.cb; pendingRole = null; if (cb) cb();
   },
   stock(d) {
-    const q = +d.qty, nm = d.name.trim().toLowerCase(), ex = S.inventory.find(i => i.depot === selDepot && i.name.toLowerCase() === nm);
-    if (ex) { ex.qty += q; if (+d.price) ex.price = +d.price; if (+d.priceGros) ex.priceGros = +d.priceGros; } else S.inventory.push({ id: Date.now(), depot: selDepot, name: d.name.trim(), cat: d.cat || 'Divers', qty: q, unit: d.unit || 'unités', price: +d.price || 0, priceGros: +d.priceGros || +d.price || 0, lastChantier: '' });
-    save(); closeModal(); renderAll(); toast('Stock mis à jour');
+    let q = +d.qty;
+    const inputUnit = (d.input_unit || d.unit || 'unités').toLowerCase();
+    const nm = d.name.trim().toLowerCase();
+    let ex = S.inventory.find(i => i.depot === selDepot && i.name.toLowerCase() === nm);
+
+    if (ex) {
+      const exUnit = (ex.unit || '').toLowerCase();
+      const exIsTonne = exUnit.includes('tonne') || isCementOrTonne(ex);
+      let addQty = q;
+      // Conversion 1 tonne = 20 sacs
+      if (exIsTonne && inputUnit.includes('sac')) {
+        addQty = q / 20; // 20 sacs = 1 tonne
+      } else if (exUnit.includes('sac') && inputUnit.includes('tonne')) {
+        addQty = q * 20; // 1 tonne = 20 sacs
+      }
+      ex.qty += addQty;
+      if (+d.price) ex.price = +d.price;
+      if (+d.priceGros) ex.priceGros = +d.priceGros;
+    } else {
+      let finalUnit = d.unit || 'unités';
+      let finalQty = q;
+      if (finalUnit === 'tonne' && inputUnit.includes('sac')) {
+        finalQty = q / 20;
+      } else if (finalUnit === 'sacs' && inputUnit.includes('tonne')) {
+        finalQty = q * 20;
+      }
+      S.inventory.push({
+        id: Date.now(),
+        depot: selDepot,
+        name: d.name.trim(),
+        cat: d.cat || 'Divers',
+        qty: finalQty,
+        unit: finalUnit,
+        uom_ratio: (finalUnit === 'tonne' || isCementOrTonne({ name: d.name, unit: finalUnit })) ? 20 : 1,
+        sale_unit: finalUnit === 'tonne' ? 'sac 50kg' : finalUnit,
+        price: +d.price || 0,
+        priceGros: +d.priceGros || +d.price || 0,
+        lastChantier: ''
+      });
+    }
+    save(); closeModal(); renderAll(); toast('Stock mis à jour avec conversion exacte');
   },
   dispatch(d) {
     const i = S.inventory.find(x => x.id == d.id), q = +d.qty, c = S.chantiers.find(x => x.id === d.chantier);
-    if (q > i.qty) { $('dispErr').textContent = 'Stock insuffisant : il reste ' + fm(i.qty) + ' ' + i.unit + '.'; return; }
-    i.qty -= q; i.lastChantier = c.nom.replace('Chantier ', '');
-    S.expenses.push({ id: Date.now(), chantier: c.id, date: day(), title: fm(q) + ' ' + i.unit + ' ' + i.name, source: 'Quincaillerie maison', cat: 'Matériaux', amount: q * i.price });
+    if (!i || !c) return;
+    const isTonne = isCementOrTonne(i);
+    const dispUnit = (d.dispatch_unit || i.unit || '').toLowerCase();
+    
+    let deductedInStockUnit = q;
+    let label = '';
+    let expAmount = 0;
+
+    if (isTonne && dispUnit.includes('sac')) {
+      deductedInStockUnit = q / 20; // 20 sacs = 1 tonne
+      label = fm(q) + ' sac' + (q > 1 ? 's' : '') + ' de 50 kg (' + (deductedInStockUnit >= 1 ? fm(deductedInStockUnit) + ' t' : q + ' sacs') + ')';
+      expAmount = q * (i.price || 0);
+    } else if (isTonne && dispUnit.includes('tonne')) {
+      deductedInStockUnit = q;
+      label = fm(q) + ' tonne' + (q > 1 ? 's' : '') + ' (' + fm(q * 20) + ' sacs)';
+      expAmount = (q * 20) * (i.price || 0);
+    } else {
+      deductedInStockUnit = q;
+      label = fm(q) + ' ' + esc(i.unit);
+      expAmount = q * (i.price || 0);
+    }
+
+    if (deductedInStockUnit > i.qty) {
+      $('dispErr').textContent = 'Stock insuffisant : il reste ' + formatMaterialQty(i) + '.';
+      return;
+    }
+    i.qty -= deductedInStockUnit;
+    i.lastChantier = c.nom.replace('Chantier ', '');
+    S.expenses.push({ id: Date.now(), chantier: c.id, date: day(), title: label + ' ' + i.name, source: 'Quincaillerie principale', cat: 'Matériaux', amount: expAmount });
     save(); renderAll();
-    openModal(`<div id="bon" class="font-mono text-xs space-y-1"><div class="text-center font-bold border-b border-slate-300 pb-2 text-slate-900">${esc(S.co ? S.co.nom : 'MARGEUP')} · BON DE SORTIE</div><div class="flex justify-between"><span>Date</span><span>${fr(day())}</span></div><div class="flex justify-between"><span>Chantier</span><span>${esc(c.nom)}</span></div><div class="flex justify-between"><span>Article</span><span>${esc(i.name)}</span></div><div class="flex justify-between"><span>Quantité</span><span>${fm(q)} ${esc(i.unit)}</span></div><div class="flex justify-between font-bold"><span>Valeur</span><span>${fm(q * i.price)} FCFA</span></div></div><p class="text-[11px] text-emerald-600">La dépense a été ajoutée au chantier.</p><div class="flex justify-end gap-2"><button onclick="closeModal()" class="px-4 py-2 rounded-xl text-xs bg-slate-100 text-slate-600">Fermer</button><button onclick="window.print()" class="px-4 py-2 rounded-xl text-xs bg-purple-600 text-white font-bold">Imprimer</button></div>`);
+    openModal(`<div id="bon" class="font-mono text-xs space-y-1"><div class="text-center font-bold border-b border-slate-300 pb-2 text-slate-900">${esc(S.co ? S.co.nom : 'MARGEUP')} · BON DE SORTIE</div><div class="flex justify-between"><span>Date</span><span>${fr(day())}</span></div><div class="flex justify-between"><span>Chantier</span><span>${esc(c.nom)}</span></div><div class="flex justify-between"><span>Article</span><span>${esc(i.name)}</span></div><div class="flex justify-between font-bold"><span>Quantité</span><span>${esc(label)}</span></div><div class="flex justify-between font-bold"><span>Valeur</span><span>${fm(expAmount)} FCFA</span></div></div><p class="text-[11px] text-emerald-600">La dépense a été ajoutée au chantier.</p><div class="flex justify-end gap-2"><button onclick="closeModal()" class="px-4 py-2 rounded-xl text-xs bg-slate-100 text-slate-600">Fermer</button><button onclick="window.print()" class="px-4 py-2 rounded-xl text-xs bg-purple-600 text-white font-bold">Imprimer</button></div>`);
   },
   trip(d) {
     const f = S.fleet.find(x => x.id == d.id);
@@ -1558,7 +1847,7 @@ function openSaleModal() {
 }
 function addSaleRow() {
   const I = S.inventory.filter(i => i.depot === selDepot);
-  $('saleRows').insertAdjacentHTML('beforeend', `<div class="sale-row grid grid-cols-12 gap-2 items-end"><label class="col-span-12 sm:col-span-6 text-[11px] text-slate-600">Article<select name="item[]" onchange="saleFill(this)" class="${INPUT} mt-1">${I.map(i => `<option value="${i.id}">${esc(i.name)} (${fm(i.qty)} ${esc(i.unit)})</option>`).join('')}</select></label><label class="col-span-5 sm:col-span-2 text-[11px] text-slate-600">Quantité<input name="qty[]" type="number" min="0.01" step="any" required value="1" oninput="saleCalc()" class="${INPUT} mt-1"></label><label class="col-span-7 sm:col-span-4 text-[11px] text-slate-600">Prix unitaire<input name="pu[]" type="number" min="0" required oninput="saleCalc()" class="${INPUT} mt-1"></label></div>`);
+  $('saleRows').insertAdjacentHTML('beforeend', `<div class="sale-row grid grid-cols-12 gap-2 items-end"><label class="col-span-12 sm:col-span-6 text-[11px] text-slate-600">Article<select name="item[]" onchange="saleFill(this)" class="${INPUT} mt-1">${I.map(i => `<option value="${i.id}">${esc(i.name)} (${formatMaterialQty(i)})</option>`).join('')}</select></label><label class="col-span-5 sm:col-span-2 text-[11px] text-slate-600">Quantité (sacs/unités)<input name="qty[]" type="number" min="0.01" step="any" required value="1" oninput="saleCalc()" class="${INPUT} mt-1"></label><label class="col-span-7 sm:col-span-4 text-[11px] text-slate-600">Prix unitaire (FCFA)<input name="pu[]" type="number" min="0" required oninput="saleCalc()" class="${INPUT} mt-1"></label></div>`);
   saleFill($('saleRows').lastElementChild.querySelector('select'));
 }
 function saleFill(se) {
@@ -1570,7 +1859,7 @@ function saleCalc() { let t = 0; document.querySelectorAll('#saleRows .sale-row'
 function renderSales() {
   const L = S.sales.filter(s => s.depot === selDepot), td = day(), T = L.filter(s => s.date === td), sum = f => T.filter(f).reduce((x, s) => x + s.total, 0);
   $('sales-kpis').innerHTML = [['Ventes du jour', sum(() => true), 'text-slate-900'], ['Dont détail', sum(s => s.stype === 'detail'), 'text-emerald-700'], ['Dont gros', sum(s => s.stype === 'gros'), 'text-amber-700']].map(k => `<div class="bg-slate-50 border border-slate-200 rounded-xl p-4"><div class="text-[11px] text-slate-600">${k[0]}</div><div class="text-xl font-black ${k[2]}">${fm(k[1])} <span class="text-xs font-normal text-slate-500">FCFA</span></div></div>`).join('');
-  $('sales-table-body').innerHTML = L.length ? L.slice(0, 30).map(s => `<tr class="hover:bg-slate-50"><td class="p-3 text-slate-600">${fr(s.date)}</td><td class="p-3 font-bold text-slate-900">${esc(s.num)}</td><td class="p-3 text-slate-700">${esc(s.client.nom)}<div class="text-[10px] text-slate-500">${s.kind === 'entreprise' ? 'Entreprise' : 'Particulier'}</div></td><td class="p-3"><span class="text-[10px] px-2 py-0.5 rounded border ${s.stype === 'gros' ? 'bg-amber-500/15 text-amber-700 border-amber-500/30' : 'bg-emerald-500/15 text-emerald-700 border-emerald-500/30'}">${s.stype === 'gros' ? 'Gros' : 'Détail'}</span></td><td class="p-3 font-bold text-orange-700">${fm(s.total)} FCFA</td><td class="p-3 text-slate-600">${esc(s.pay)}</td><td class="p-3"><button onclick="openInvoice('${s.id}')" class="bg-purple-600 hover:bg-purple-500 text-white text-[11px] px-2.5 py-1 rounded-lg">Facture</button></td></tr>`).join('') : '<tr><td colspan="7" class="p-6 text-center text-slate-500">Aucune vente. Cliquez sur « Nouvelle vente ».</td></tr>';
+  $('sales-table-body').innerHTML = L.length ? L.slice(0, 30).map(s => `<tr class="hover:bg-slate-50"><td class="p-3 text-slate-600">${fr(s.date)}</td><td class="p-3 font-bold text-slate-900">${esc(s.num)}</td><td class="p-3 text-slate-700">${esc(s.client.nom)}<div class="text-[10px] text-slate-500">${s.kind === 'entreprise' ? 'Entreprise' : 'Particulier'}</div></td><td class="p-3"><span class="text-[10px] px-2 py-0.5 rounded border ${s.stype === 'gros' ? 'bg-amber-500/15 text-amber-700 border-amber-500/30' : 'bg-emerald-500/15 text-emerald-700 border-emerald-500/30'}">${s.stype === 'gros' ? 'Gros' : 'Détail'}</span></td><td class="p-3 font-bold text-orange-700">${fm(s.total)} FCFA</td><td class="p-3 text-slate-600">${esc(s.pay)}</td><td class="p-3"><button onclick="openInvoice('${s.id}')" class="bg-purple-600 hover:bg-purple-500 text-white text-[11px] px-2.5 py-1 rounded-lg">Facture</button></td></tr>`).join('') : '<tr><td colspan="7" class="p-6 text-center text-slate-500">Aucune vente ni facture enregistrée. Cliquez sur « Nouvelle vente » pour créer votre première facture.</td></tr>';
 }
 function invoiceHtml(s) {
   const co = S.co || { nom: 'MargeUp' }, dp = S.depots.find(d => d.id === s.depot) || {}, th = al => '<th style="text-align:' + al + ';padding:6px;background:#f3f4f6;border-bottom:1px solid #ddd">', td = al => '<td style="text-align:' + al + ';padding:6px;border-bottom:1px solid #eee">';
@@ -1674,26 +1963,36 @@ function renderContact() {
   const el = $('contact-box'); if (!el) return;
   const t = CONTACT.tel.replace(/\D/g, ''), disp = t.replace(/(\d{2})(\d{3})(\d{2})(\d{2})/, '$1 $2 $3 $4');
   el.innerHTML = `<div class="flex flex-col lg:flex-row items-center justify-between gap-6">
-    <div class="space-y-2 text-center lg:text-left">
+    <div class="space-y-3 text-center lg:text-left">
       <div class="inline-flex items-center space-x-2 bg-orange-500/20 text-orange-400 border border-orange-500/30 px-3 py-0.5 rounded-full text-xs font-bold">
         <i class="fa-solid fa-headset"></i>
         <span>Équipe Dédiée au Sénégal</span>
       </div>
       <h2 class="text-xl sm:text-2xl font-black text-white">Une question ? Besoin d’une démonstration ?</h2>
       <p class="text-xs text-slate-300 max-w-xl leading-relaxed">
-        Notre équipe vous accompagne pour paramétrer vos quincailleries et camions. Contactez-nous par formulaire, WhatsApp ou appel direct.
+        Notre équipe basée à Dakar vous accompagne pour paramétrer vos quincailleries, chantiers et camions. Contactez-nous par e-mail ou WhatsApp :
       </p>
+      <div class="flex flex-wrap items-center justify-center lg:justify-start gap-2 pt-1">
+        <a href="mailto:${CONTACT.email}" class="inline-flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-orange-400 hover:text-orange-300 px-3.5 py-2 rounded-xl text-xs font-bold border border-slate-600 transition shadow-sm cursor-pointer" title="Nous écrire par e-mail">
+          <i class="fa-solid fa-envelope text-sm"></i>
+          <span class="underline">${CONTACT.email}</span>
+        </a>
+        <a href="https://wa.me/221${t}?text=Bonjour%20MargeUp,%20je%20souhaite%20des%20informations%20sur%20l'application" target="_blank" rel="noopener" class="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-3.5 py-2 rounded-xl text-xs font-bold transition shadow-sm cursor-pointer" title="Rejoindre directement sur WhatsApp">
+          <i class="fa-brands fa-whatsapp text-sm text-emerald-200"></i>
+          <span>Rejoindre sur WhatsApp</span>
+        </a>
+      </div>
     </div>
 
     <div class="flex flex-wrap items-center justify-center gap-3">
-      <button type="button" onclick="openContactModal()" class="bg-orange-500 hover:bg-orange-600 text-white font-bold px-4 py-3 rounded-xl text-xs flex items-center space-x-2 shadow-lg shadow-orange-500/30 transition cursor-pointer">
-        <i class="fa-solid fa-envelope"></i>
-        <span>Nous envoyer un message</span>
-      </button>
-      <a href="https://wa.me/221${t}?text=Bonjour%20MargeUp,%20je%20souhaite%20des%20informations%20sur%20l'application" target="_blank" rel="noopener" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-3 rounded-xl text-xs flex items-center space-x-2 transition">
-        <i class="fa-brands fa-whatsapp text-sm"></i>
+      <a href="https://wa.me/221${t}?text=Bonjour%20MargeUp,%20je%20souhaite%20des%20informations%20sur%20l'application" target="_blank" rel="noopener" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-3 rounded-xl text-xs flex items-center space-x-2 transition shadow-lg shadow-emerald-600/30 cursor-pointer">
+        <i class="fa-brands fa-whatsapp text-base"></i>
         <span>WhatsApp Direct</span>
       </a>
+      <button type="button" onclick="openContactModal()" class="bg-orange-500 hover:bg-orange-600 text-white font-bold px-4 py-3 rounded-xl text-xs flex items-center space-x-2 shadow-lg shadow-orange-500/30 transition cursor-pointer">
+        <i class="fa-solid fa-paper-plane"></i>
+        <span>Formulaire</span>
+      </button>
       <a href="tel:+221${t}" class="bg-slate-800 hover:bg-slate-700 text-white border border-slate-600 font-bold px-4 py-3 rounded-xl text-xs flex items-center space-x-2 transition">
         <i class="fa-solid fa-phone"></i>
         <span>${disp}</span>
