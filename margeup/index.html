@@ -22,7 +22,8 @@
   <meta property="og:site_name" content="MargeUp">
   <meta property="og:title" content="MargeUp - Votre marge sous contrôle">
   <meta property="og:description" content="ERP pour le BTP, le génie civil, le transport et les quincailleries au Sénégal. 15 jours d'essai gratuit.">
-  <meta property="og:image" content="images/og-image.jpg">
+  <meta property="og:image" content="https://margeup.com/images/og-image.jpg">
+  <meta name="twitter:image" content="https://margeup.com/images/og-image.jpg">
   <meta property="og:locale" content="fr_SN">
   <meta name="twitter:card" content="summary_large_image">
   <!-- Tailwind CSS -->
@@ -154,7 +155,7 @@
               <i class="fa-solid fa-calculator"></i>
               <span>Calculer mon Tarif personnalisé</span>
             </button>
-            <button onclick="switchTab('ceo')" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-semibold px-6 py-3.5 rounded-xl transition flex items-center space-x-2">
+            <button onclick="startDemoMode()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-semibold px-6 py-3.5 rounded-xl transition flex items-center space-x-2 cursor-pointer">
               <i class="fa-solid fa-play"></i>
               <span>Tester la Démo Interactive</span>
             </button>
@@ -297,9 +298,9 @@
           <div>
             <div class="inline-flex items-center space-x-1.5 bg-orange-500/10 text-orange-700 border border-orange-500/30 px-3 py-1 rounded-full text-xs font-bold mb-2">
               <i class="fa-solid fa-star text-amber-500"></i>
-              <span>Avis & Témoignages du Terrain</span>
+              <span>Cas d’Usage & Retours d’Expérience (Exemples illustratifs)</span>
             </div>
-            <h2 class="text-2xl sm:text-3xl font-black text-slate-900">Ce que disent les professionnels au Sénégal</h2>
+            <h2 class="text-2xl sm:text-3xl font-black text-slate-900">Scénarios concrets et retours d’expérience</h2>
             <p class="text-xs sm:text-sm text-slate-600 mt-1">Directeurs de travaux, gérants de quincaillerie et responsables de flotte témoignent de leur gain de marge.</p>
           </div>
           <div class="flex items-center gap-3">
@@ -310,29 +311,34 @@
           </div>
         </div>
 
-        <!-- STATS DE SATISFACTION -->
+        <!-- STATS DE SATISFACTION (OBJECTIFS & EXEMPLES ILLUSTRATIFS) -->
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-white border border-slate-200 rounded-2xl p-4 sm:p-5">
+          <div class="col-span-2 sm:col-span-4 text-center pb-1">
+            <span class="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 bg-slate-100 px-3 py-1 rounded-full border border-slate-200">
+              <i class="fa-solid fa-chart-pie text-orange-500"></i> Données indicatives & objectifs types de performance au Sénégal (exemples)
+            </span>
+          </div>
           <div class="text-center p-2">
             <div class="text-2xl sm:text-3xl font-black text-orange-600">4.9<span class="text-sm font-semibold text-slate-500">/5</span></div>
             <div class="flex justify-center text-amber-400 text-xs my-1">
               <i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i>
             </div>
-            <div class="text-[11px] text-slate-500 font-medium">Note moyenne clients</div>
+            <div class="text-[11px] text-slate-500 font-medium">Note cible de service</div>
           </div>
           <div class="text-center p-2 border-l border-slate-100">
             <div class="text-2xl sm:text-3xl font-black text-slate-900">98%</div>
-            <div class="text-emerald-600 text-xs my-1 font-bold"><i class="fa-solid fa-thumbs-up"></i> Recommandé</div>
-            <div class="text-[11px] text-slate-500 font-medium">Satisfaction globale</div>
+            <div class="text-emerald-600 text-xs my-1 font-bold"><i class="fa-solid fa-thumbs-up"></i> Satisfaction visée</div>
+            <div class="text-[11px] text-slate-500 font-medium">Taux recommandé</div>
           </div>
           <div class="text-center p-2 border-l border-slate-100">
             <div class="text-2xl sm:text-3xl font-black text-slate-900">+120</div>
-            <div class="text-orange-600 text-xs my-1 font-bold"><i class="fa-solid fa-truck-pickup"></i> Flottes & Dépôts</div>
-            <div class="text-[11px] text-slate-500 font-medium">Équipés au Sénégal</div>
+            <div class="text-orange-600 text-xs my-1 font-bold"><i class="fa-solid fa-truck-pickup"></i> Objectif de parc</div>
+            <div class="text-[11px] text-slate-500 font-medium">Véhicules & dépôts ciblés</div>
           </div>
           <div class="text-center p-2 border-l border-slate-100">
             <div class="text-2xl sm:text-3xl font-black text-emerald-600">-18%</div>
-            <div class="text-emerald-700 text-xs my-1 font-bold"><i class="fa-solid fa-arrow-trend-down"></i> Pertes & vols</div>
-            <div class="text-[11px] text-slate-500 font-medium">Carburant et matériaux</div>
+            <div class="text-emerald-700 text-xs my-1 font-bold"><i class="fa-solid fa-arrow-trend-down"></i> Réduction estimée</div>
+            <div class="text-[11px] text-slate-500 font-medium">Sur les pertes & carburant</div>
           </div>
         </div>
 
@@ -351,7 +357,7 @@
           <details class="bg-slate-50 border border-slate-200 rounded-xl p-4 group"><summary class="cursor-pointer text-sm font-bold text-slate-900 list-none flex justify-between gap-3">Mon argent passe-t-il par MargeUp ?<i class="fa-solid fa-chevron-down text-slate-500 text-xs mt-1"></i></summary><p class="text-xs text-slate-600 leading-relaxed mt-2">Non. Les paiements de vos clients arrivent directement sur vos comptes. MargeUp est un outil de gestion, de traçabilité et de contrôle.</p></details>
           <details class="bg-slate-50 border border-slate-200 rounded-xl p-4 group"><summary class="cursor-pointer text-sm font-bold text-slate-900 list-none flex justify-between gap-3">Faut-il installer un logiciel ?<i class="fa-solid fa-chevron-down text-slate-500 text-xs mt-1"></i></summary><p class="text-xs text-slate-600 leading-relaxed mt-2">Non. MargeUp s’ouvre dans le navigateur, sur téléphone, tablette ou ordinateur.</p></details>
           <details class="bg-slate-50 border border-slate-200 rounded-xl p-4 group"><summary class="cursor-pointer text-sm font-bold text-slate-900 list-none flex justify-between gap-3">Comment fonctionne le tarif par camion ?<i class="fa-solid fa-chevron-down text-slate-500 text-xs mt-1"></i></summary><p class="text-xs text-slate-600 leading-relaxed mt-2">Vous payez 9 900 FCFA par camion et par mois. Vous pouvez ajuster le nombre de véhicules à tout moment selon l'évolution de votre flotte.</p></details>
-          <details class="bg-slate-50 border border-slate-200 rounded-xl p-4 group"><summary class="cursor-pointer text-sm font-bold text-slate-900 list-none flex justify-between gap-3">Comment payer l’abonnement ?<i class="fa-solid fa-chevron-down text-slate-500 text-xs mt-1"></i></summary><p class="text-xs text-slate-600 leading-relaxed mt-2">Par Wave ou Orange Money, directement depuis l’application, au moment de vous abonner.</p></details>
+          <details class="bg-slate-50 border border-slate-200 rounded-xl p-4 group"><summary class="cursor-pointer text-sm font-bold text-slate-900 list-none flex justify-between gap-3">Comment payer l’abonnement ?<i class="fa-solid fa-chevron-down text-slate-500 text-xs mt-1"></i></summary><p class="text-xs text-slate-600 leading-relaxed mt-2">Par transfert direct Wave ou Orange Money vers notre numéro marchand officiel avec confirmation par SMS / référence de transaction, validée sous 24h par notre équipe support. Aucun prélèvement automatique bancaire n’est requis.</p></details>
         </div>
       </div>
 
@@ -606,16 +612,6 @@
             </div>
 
             <button onclick="chooseTruckPack()" class="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3.5 rounded-full text-xs transition cursor-pointer shadow-sm">
-              Choisir ce Parc Flotte
-            </button>
-          </div>
-
-        </div>
-                </li>
-              </ul>
-            </div>
-
-            <button onclick="chooseTruckPack()" class="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3.5 rounded-full text-xs transition cursor-pointer">
               Choisir ce Parc Flotte
             </button>
           </div>
@@ -972,13 +968,20 @@
 
   <!-- PIED DE PAGE -->
   <footer class="bg-white border-t border-slate-200 mt-8">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col sm:flex-row items-center justify-between gap-3">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col md:flex-row items-center justify-between gap-4">
       <div class="flex items-center space-x-3">
         <img src="images/logo-256.png" alt="Logo MargeUp" width="36" height="36" class="w-9 h-9 rounded-lg">
         <div>
           <div class="text-sm font-black text-slate-900">Marge<span class="text-orange-500">Up</span></div>
-          <div class="text-[11px] text-slate-500">Votre marge sous contrôle · Sénégal</div>
+          <div class="text-[11px] text-slate-500">Votre marge sous contrôle · BTP & Transport au Sénégal</div>
         </div>
+      </div>
+      <div class="flex flex-wrap items-center justify-center gap-3 text-xs text-slate-600 font-medium">
+        <button type="button" onclick="openLegalModal('mentions')" class="hover:text-orange-600 transition cursor-pointer">Mentions Légales</button>
+        <span class="text-slate-300">•</span>
+        <button type="button" onclick="openLegalModal('confidentialite')" class="hover:text-orange-600 transition cursor-pointer">Confidentialité & Données (CDP Sénégal)</button>
+        <span class="text-slate-300">•</span>
+        <button type="button" onclick="openLegalModal('cgu')" class="hover:text-orange-600 transition cursor-pointer">Conditions d’Utilisation (CGU)</button>
       </div>
       <div class="text-[11px] text-slate-500">© <span id="footer-year"></span> MargeUp. Tous droits réservés.</div>
     </div>

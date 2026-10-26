@@ -266,7 +266,8 @@ function defaultReviews() {
       rating: 5,
       date: day(-3),
       tag: 'Flotte & Carburant',
-      text: "Grâce à MargeUp, nous avons enfin une visibilité en direct sur la consommation de nos camions bennes et le nombre de tours quotidiens entre la carrière de Bargny et nos chantiers. Plus aucune triche sur le carburant, nous avons économisé près de 2,3 millions FCFA dès le premier mois."
+      isExample: true,
+      text: "Grâce à MargeUp, nous avons enfin une visibilité en direct sur la consommation de nos camions bennes et le nombre de tours quotidiens entre la carrière de Bargny et nos chantiers. Le contrôle précis du carburant nous a permis d'optimiser nos charges dès le premier mois."
     },
     {
       id: 'rev-2',
@@ -277,6 +278,7 @@ function defaultReviews() {
       rating: 5,
       date: day(-8),
       tag: 'Quincaillerie & Vente',
+      isExample: true,
       text: "Le double guichet B2C/B2B et l’impression des reçus thermiques ont changé notre quotidien. Le stock de ciment et fer à béton est à jour en direct, sans inventaire de fin de mois douloureux. Mes magasiniers l'adorent."
     },
     {
@@ -288,6 +290,7 @@ function defaultReviews() {
       rating: 5,
       date: day(-15),
       tag: 'Transport & Rotations',
+      isExample: true,
       text: "Le suivi des voyages avec les lieux précis de départ et de déchargement a complètement transformé notre contrôle. Le classement des chauffeurs avec prime au mérite a motivé toute l'équipe et diminué les pannes évitables."
     },
     {
@@ -298,8 +301,9 @@ function defaultReviews() {
       city: 'Diamniadio',
       rating: 5,
       date: day(-22),
-      tag: 'BTP & Gros Œuvre',
-      text: "L'anticipation automatique des retards sur le gros œuvre et l'imputation directe des dépenses au bon chantier permettent de piloter la vraie marge nette. Un ERP vraiment adapté à nos réalités au Sénégal."
+      tag: 'BTP & Matériaux',
+      isExample: true,
+      text: "L'imputation directe des sorties de stock et dépenses au bon chantier permet de piloter la vraie marge nette sans mauvaise surprise. Un ERP simple et adapté aux réalités sénégalaises."
     }
   ];
 }
@@ -1304,7 +1308,7 @@ function renderCeo() {
           ? '<span class="inline-flex items-center gap-1 bg-rose-50 text-rose-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-rose-200"><i class="fa-solid fa-circle-exclamation"></i> Dépassement</span>'
           : pc >= 90
           ? '<span class="inline-flex items-center gap-1 bg-amber-50 text-amber-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-200"><i class="fa-solid fa-triangle-exclamation"></i> Budget à 90%</span>'
-          : '<span class="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-200"><i class="fa-solid fa-circle-check"></i> Dans le budget</span>';
+          : '<span class="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-200"><i class="fa-solid fa-circle-check"></i> Budget maîtrisé</span>';
 
         return `<div class="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2">
           <div class="flex items-center justify-between gap-2">
@@ -1543,8 +1547,8 @@ function renderReviews() {
             <div>
               <div class="flex items-center gap-2 flex-wrap">
                 <span class="font-bold text-slate-900 text-sm">${esc(r.author)}</span>
-                <span class="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-200">
-                  <i class="fa-solid fa-circle-check text-[9px]"></i> Client vérifié
+                <span class="inline-flex items-center gap-1 ${r.isExample ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-blue-50 text-blue-800 border-blue-200'} text-[10px] font-bold px-2 py-0.5 rounded-full border">
+                  <i class="fa-solid ${r.isExample ? 'fa-flask text-amber-600' : 'fa-user-check text-blue-600'} text-[9px]"></i> ${r.isExample ? 'Exemple illustratif' : 'Retour d’expérience'}
                 </span>
               </div>
               <div class="text-xs text-slate-500">${esc(r.role)} • <span class="text-slate-700 font-semibold">${esc(r.company)}</span></div>
@@ -1619,8 +1623,65 @@ function openReviewModal() {
 
 /* ---------- AFFICHAGE GÉNÉRAL ---------- */
 function renderDemoBar() {
-  $('demoBar').innerHTML = S.demo ? '<div class="mb-6 bg-amber-500/10 border border-amber-500/30 text-amber-700 rounded-xl p-3 text-xs flex flex-wrap items-center justify-between gap-2"><span><i class="fa-solid fa-flask"></i> Vous voyez des données d’exemple.</span><button onclick="clearDemo()" class="bg-amber-500 text-slate-950 font-bold px-3 py-1.5 rounded-lg">Remplir mes propres données</button></div>' : '';
+  const el = $('demoBar');
+  if (!el) return;
+  if (S.demo) {
+    el.innerHTML = `<div class="mb-6 bg-gradient-to-r from-amber-50 via-orange-50 to-amber-50 border border-amber-300 rounded-2xl p-4 text-xs text-amber-900 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <span class="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold text-sm shadow-sm shrink-0">
+          <i class="fa-solid fa-flask"></i>
+        </span>
+        <div>
+          <div class="font-bold text-sm text-slate-900 flex items-center gap-2">
+            <span>Mode Démonstration Interactive</span>
+            <span class="bg-amber-200 text-amber-900 font-extrabold text-[10px] px-2 py-0.5 rounded-full uppercase">Données Fictives d’Exemple</span>
+          </div>
+          <p class="text-slate-600 text-[11px] mt-0.5">Vous testez l’application avec un jeu de données fictif (quincaillerie, camions, factures d'exemple). Aucune donnée n'affecte une vraie entreprise.</p>
+        </div>
+      </div>
+      <div class="flex flex-wrap items-center gap-2 shrink-0">
+        <button onclick="openCompanyModal()" class="bg-orange-500 hover:bg-orange-600 text-white font-bold px-3.5 py-2 rounded-xl text-xs transition shadow-sm cursor-pointer flex items-center gap-1.5">
+          <i class="fa-solid fa-building"></i> <span>Créer mon espace réel (15j gratuits)</span>
+        </button>
+        <button onclick="clearDemo()" class="bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold px-3 py-2 rounded-xl text-xs transition cursor-pointer flex items-center gap-1">
+          <i class="fa-solid fa-broom text-slate-500"></i> <span>Vider les exemples</span>
+        </button>
+      </div>
+    </div>`;
+  } else if (S.co) {
+    el.innerHTML = `<div class="mb-4 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl px-4 py-2 text-xs flex flex-wrap items-center justify-between gap-2 shadow-sm">
+      <span class="flex items-center gap-2 font-medium">
+        <i class="fa-solid fa-circle-check text-emerald-600"></i>
+        <span>Espace Réel Entreprise : <b class="font-bold text-slate-900">${esc(S.co.nom)}</b> (${esc(S.co.ville || 'Sénégal')})</span>
+      </span>
+      <div class="flex items-center gap-2 text-[11px]">
+        <button onclick="activateDemoMode()" class="text-orange-600 hover:text-orange-700 font-bold underline cursor-pointer">
+          Recharger les données de démonstration
+        </button>
+      </div>
+    </div>`;
+  } else {
+    el.innerHTML = '';
+  }
 }
+
+function startDemoMode() {
+  if (!S.inventory.length && !S.fleet.length) {
+    Object.assign(S, seed());
+  }
+  S.demo = true;
+  save();
+  renderAll();
+  switchTab('ceo');
+  toast('Mode Démonstration actif avec données d’exemple');
+}
+
+function activateDemoMode() {
+  if (confirm('Recharger les données de démonstration (exemples fictifs) ?')) {
+    startDemoMode();
+  }
+}
+
 function clearDemo() {
   if (!confirm('Effacer les données d’exemple et commencer avec les vôtres ?')) return;
   Object.assign(S, { demo: false, inventory: [], sales: [], pannes: [], expenses: [], fleet: [], chantiers: [], batiments: [], seq: 0 }); save(); renderAll();
@@ -2165,3 +2226,122 @@ window.onload = async function () {
   // Restauration d'arrière-plan résiliente depuis IndexedDB
   await syncFromIndexedDB();
 };
+
+/* ---------- MENTIONS LÉGALES, POLITIQUE DE CONFIDENTIALITÉ (CDP SÉNÉGAL) & CGU ---------- */
+function openLegalModal(type) {
+  let title = '', content = '';
+
+  if (type === 'mentions') {
+    title = 'Mentions Légales';
+    content = `
+      <div class="space-y-4 text-xs text-slate-700 leading-relaxed">
+        <div class="bg-orange-50 border border-orange-200 rounded-xl p-3 text-orange-950 font-medium">
+          <p class="font-bold text-slate-900">Éditeur de la plateforme MargeUp</p>
+          <p>MargeUp est une solution numérique de gestion pour le BTP, le génie civil, la quincaillerie et le transport au Sénégal.</p>
+        </div>
+        <div>
+          <h4 class="font-bold text-slate-900 text-sm mb-1">1. Coordonnées de l'éditeur</h4>
+          <p><b>Éditeur :</b> Équipe MargeUp Sénégal</p>
+          <p><b>Siège d’activité :</b> Dakar, Sénégal</p>
+          <p><b>Contact e-mail :</b> <a href="mailto:${CONTACT.email}" class="text-orange-600 underline font-semibold">${CONTACT.email}</a></p>
+          <p><b>Téléphone / WhatsApp officiel :</b> <a href="tel:+221${CONTACT.tel.replace(/\D/g, '')}" class="text-orange-600 font-semibold">${CONTACT.tel}</a></p>
+        </div>
+        <div>
+          <h4 class="font-bold text-slate-900 text-sm mb-1">2. Hébergement technique</h4>
+          <p>L’application web et ses bases de données sécurisées sont hébergées par des prestataires d’infrastructures cloud certifiés assurant le chiffrement HTTPS/TLS et la haute disponibilité des données.</p>
+        </div>
+        <div>
+          <h4 class="font-bold text-slate-900 text-sm mb-1">3. Propriété intellectuelle</h4>
+          <p>L'ensemble des interfaces, codes sources, logos, graphismes et marques constituant la plateforme MargeUp sont la propriété exclusive de MargeUp. Toute reproduction ou distribution non autorisée est formellement interdite.</p>
+        </div>
+      </div>
+    `;
+  } else if (type === 'confidentialite') {
+    title = 'Politique de Confidentialité & Protection des Données (CDP Sénégal)';
+    content = `
+      <div class="space-y-4 text-xs text-slate-700 leading-relaxed">
+        <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-emerald-950">
+          <p class="font-bold text-emerald-900"><i class="fa-solid fa-shield-halved"></i> Conformité à la Loi n° 2008-12 du 25 janvier 2008</p>
+          <p class="mt-1">MargeUp s'engage à respecter scrupuleusement la réglementation sénégalaise sur la protection des données à caractère personnel et les directives de la <b>Commission des Données Personnelles du Sénégal (CDP)</b>.</p>
+        </div>
+
+        <div>
+          <h4 class="font-bold text-slate-900 text-sm mb-1">1. Données collectées</h4>
+          <p>MargeUp collecte uniquement les données strictement nécessaires au fonctionnement du service :</p>
+          <ul class="list-disc list-inside space-y-1 mt-1 pl-1">
+            <li><b>Données de l'entreprise :</b> Raison sociale, ville, adresse, numéro de téléphone, e-mail de contact.</li>
+            <li><b>Données des collaborateurs :</b> Noms, e-mails, numéros de téléphone et rôles attribués (Direction, Magasinier, Transport).</li>
+            <li><b>Données d'exploitation :</b> Ventes au comptoir, stocks, fiches véhicules, consommations de carburant, pannes et registres de voyages.</li>
+          </ul>
+        </div>
+
+        <div>
+          <h4 class="font-bold text-slate-900 text-sm mb-1">2. Finalités du traitement</h4>
+          <p>Les données sont traitées pour :</p>
+          <ul class="list-disc list-inside space-y-1 mt-1 pl-1">
+            <li>L’exécution du contrat de service (accès aux modules métiers, calcul des marges, factures PDF).</li>
+            <li>La gestion des accès sécurisés et l'isolation des données par entreprise (Row-Level Security).</li>
+            <li>L’assistance client et le support technique par nos conseillers au Sénégal.</li>
+          </ul>
+        </div>
+
+        <div>
+          <h4 class="font-bold text-slate-900 text-sm mb-1">3. Non-divulgation et confidentialité stricte</h4>
+          <p><b>Vos données restent votre propriété exclusive.</b> MargeUp ne commercialise, ne loue et ne cède aucune donnée personnelle ou commerciale à des tiers.</p>
+        </div>
+
+        <div>
+          <h4 class="font-bold text-slate-900 text-sm mb-1">4. Vos droits (Accès, Rectification, Suppression)</h4>
+          <p>Conformément à la Loi n° 2008-12, vous disposez d'un droit d’accès, de rectification, d'opposition et de suppression de vos données personnelles.</p>
+          <p class="mt-1">Pour exercer vos droits, contactez notre délégué à la protection des données par courriel à : <a href="mailto:${CONTACT.email}" class="text-orange-600 underline font-bold">${CONTACT.email}</a>.</p>
+          <p class="mt-1">Vous pouvez également saisir la <b>Commission des Données Personnelles (CDP) du Sénégal</b> : <a href="https://www.cdp.sn" target="_blank" rel="noopener" class="text-emerald-700 underline font-semibold">www.cdp.sn</a>.</p>
+        </div>
+      </div>
+    `;
+  } else if (type === 'cgu') {
+    title = 'Conditions Générales d’Utilisation (CGU)';
+    content = `
+      <div class="space-y-4 text-xs text-slate-700 leading-relaxed">
+        <div>
+          <h4 class="font-bold text-slate-900 text-sm mb-1">1. Objet du service</h4>
+          <p>MargeUp fournit une solution logicielle en mode SaaS destinée aux entreprises de BTP, aux transporteurs et aux exploitants de quincailleries au Sénégal.</p>
+        </div>
+
+        <div>
+          <h4 class="font-bold text-slate-900 text-sm mb-1">2. Essai gratuit de 15 jours</h4>
+          <p>Toute nouvelle entreprise bénéficie d’un essai gratuit de 15 jours sans engagement et sans saisie de carte bancaire, permettant de tester l'ensemble des modules.</p>
+        </div>
+
+        <div>
+          <h4 class="font-bold text-slate-900 text-sm mb-1">3. Abonnements et modalités de règlement</h4>
+          <p>À l'issue de l'essai gratuit, l'accès se prolonge via la souscription d'un abonnement mensuel ou annuel. Le paiement s'effectue par <b>transfert direct Wave ou Orange Money</b> vers le numéro marchand agréé. La validation de l'abonnement intervient après transmission de la référence de paiement SMS.</p>
+        </div>
+
+        <div>
+          <h4 class="font-bold text-slate-900 text-sm mb-1">4. Responsabilité de l'utilisateur</h4>
+          <p>Chaque utilisateur est responsable de la confidentialité de ses identifiants et de l'exactitude des données de terrain saisies (stocks, ventes, litrages de carburant).</p>
+        </div>
+
+        <div>
+          <h4 class="font-bold text-slate-900 text-sm mb-1">5. Droit applicable et juridiction compétente</h4>
+          <p>Les présentes CGU sont soumises au droit sénégalais. Tout litige relatif à leur interprétation ou exécution relève de la compétence des tribunaux de Dakar.</p>
+        </div>
+      </div>
+    `;
+  }
+
+  openModal(`
+    <div class="border-b border-slate-200 pb-3">
+      <h3 class="text-lg font-black text-slate-900">${title}</h3>
+      <p class="text-xs text-slate-500">MargeUp Sénégal · Conforme à la législation en vigueur</p>
+    </div>
+    <div class="py-3 max-h-[70vh] overflow-y-auto custom-scrollbar">
+      ${content}
+    </div>
+    <div class="flex justify-end pt-3 border-t border-slate-200">
+      <button type="button" onclick="closeModal()" class="px-5 py-2.5 rounded-xl text-xs bg-slate-900 hover:bg-slate-800 text-white font-bold cursor-pointer">
+        Fermer
+      </button>
+    </div>
+  `);
+}
