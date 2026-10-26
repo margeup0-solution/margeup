@@ -1,0 +1,22 @@
+# .gitignore MargeUp
+node_modules/
+
+# Fichiers d'environnement contenant des configurations locales
+.env
+.env.local
+.env.*.local
+!.env.example
+*.env
+margeup/.env
+
+# Archives et copies de sauvegarde locales
+*.zip
+_backup*/
+margeup-backup*/
+
+# Système & Éditeurs
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log

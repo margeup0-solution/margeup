@@ -63,7 +63,7 @@
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
 
       <!-- LOGO & SLOGAN -->
-      <div class="flex items-center space-x-3 cursor-pointer" onclick="brandTap(); switchTab('accueil')">
+      <div class="flex items-center space-x-3 cursor-pointer" onclick="switchTab('accueil')">
         <img src="images/logo.png" alt="Logo MargeUp" width="48" height="48" class="w-12 h-12 rounded-xl shadow-lg shadow-orange-500/30 ring-1 ring-orange-500/30">
         <div>
           <div class="flex items-center space-x-2">
@@ -982,39 +982,17 @@
   </footer>
   <script>document.getElementById('footer-year').textContent = new Date().getFullYear();</script>
 
-  <!-- FENÊTRE D’ACCÈS MAINTENANCE -->
-  <div id="maintModal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
-    <div class="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-6 space-y-6">
-      <div class="flex justify-between items-center border-b border-slate-200 pb-3">
-        <h3 class="text-base font-bold text-slate-900 flex items-center space-x-2">
-          <i class="fa-solid fa-key text-amber-600"></i>
-          <span>Accès maintenance</span>
-        </h3>
-        <button onclick="closeMaint()" class="text-slate-500 hover:text-slate-900"><i class="fa-solid fa-xmark"></i></button>
-      </div>
-
-      <div class="space-y-3">
-        <label class="text-xs text-slate-500">Code d’accès :</label>
-        <input type="password" id="maintCodeInput" placeholder="Code secret..." class="w-full bg-white border border-slate-300 rounded-xl p-3 text-sm text-slate-900 focus:outline-none focus:border-amber-500">
-      </div>
-
-      <div class="flex justify-end space-x-3">
-        <button onclick="closeMaint()" class="px-4 py-2 rounded-xl text-xs bg-slate-100 text-slate-600">Annuler</button>
-        <button onclick="verifyMaint()" class="px-4 py-2 rounded-xl text-xs bg-amber-500 text-slate-950 font-bold">Déverrouiller</button>
-      </div>
-    </div>
-  </div>
+  <!-- Accès maintenance retiré côté navigateur -->
 
   <!-- FENÊTRE GÉNÉRIQUE (formulaires) -->
   <div id="modal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[60] hidden flex items-center justify-center p-4">
     <div id="modalBox" class="bg-white border border-slate-200 rounded-2xl max-w-lg w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto custom-scrollbar"></div>
   </div>
 
-  <!-- CONSOLE ADMINISTRATEUR -->
-  <div id="adminPanel" class="fixed inset-0 bg-white z-50 hidden overflow-y-auto custom-scrollbar"></div>
+  <!-- Console administrateur retirée côté navigateur -->
 
   <!-- SCRIPTS : d'abord la connexion base de données, puis la logique -->
-  <script src="supabase.js"></script>
+  <script src="config.js"></script>
   <script src="app.js"></script>
   <script>
     if ('serviceWorker' in navigator) {

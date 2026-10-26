@@ -2,16 +2,9 @@
    Données : enregistrées dans le navigateur (localStorage) pour l'instant.
    Quand Supabase sera branché, seules les fonctions load() et save() changeront. */
 
-/* ---------- RÉGLAGES ---------- */
-// Sécurité : empreinte SHA-256 pour éviter l'exposition en clair du code secret dans le script client
-const MAINT_SALT = 'margeup_salt_2026';
-async function _hashMaint(s) {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(MAINT_SALT + '|' + (s || '').trim()));
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
-}
-let _MAINT_TARGET = null;
-_hashMaint('783326239').then(h => { _MAINT_TARGET = h; });
-const PAY = { wave: '', om: '', num: '78 332 62 39' };
+/* ---------- RÉGLAGES & CONFIGURATION ---------- */
+const CFG = window.MARGEUP_CONFIG || { pay: { wave: '', om: '', num: '' }, contact: { tel: '771906476', email: 'margeup0@gmail.com' } };
+const PAY = CFG.pay || { wave: '', om: '', num: '' };
 const CONTACT = { tel: '771906476', email: 'margeup0@gmail.com' };
 const TRIAL_DAYS = 15;
 const KEY = 'safebtp.v3', KA = 'safebtp.admin.v3';
@@ -417,7 +410,7 @@ function enterRole(role) {
 }
 function requestRole(role, cb) {
   const rs = $('roleSelector');
-  if (role === 'ceo' || role === curRole || !S.co || isSA()) { enterRole(role); if (cb) cb(); return; } // le patron et les visiteurs n'ont pas de mot de passe
+  if (role === 'ceo' || role === curRole || !S.co) { enterRole(role); if (cb) cb(); return; } // le patron et les visiteurs n'ont pas de mot de passe
   rs.value = curRole;
   const M = S.team.filter(m => m.role === role);
   if (!M.length && !S.roles[role]) return openModal('<h3 class="text-base font-bold text-slate-900">Aucun membre pour ce rôle</h3><p class="text-xs text-slate-600">Le patron doit d’abord ajouter un membre (nom, e-mail, téléphone) pour le rôle ' + ROLE_LABEL[role] + ' avec le bouton « Équipe ».</p><div class="flex justify-end"><button onclick="closeModal()" class="px-4 py-2 rounded-xl text-xs bg-slate-100 text-slate-600">Fermer</button></div>');
@@ -1744,92 +1737,6 @@ const FORMS = {
   }
 };
 
-/* ---------- CONSOLE ADMINISTRATEUR ---------- */
-function openMaint() { $('maintModal').classList.remove('hidden'); }
-function closeMaint() { $('maintModal').classList.add('hidden'); }
-async function verifyMaint() {
-  const entered = $('maintCodeInput').value;
-  const hash = await _hashMaint(entered);
-  if (hash === _MAINT_TARGET) {
-    $('maintCodeInput').value = '';
-    closeMaint();
-    try { sessionStorage.setItem('safebtp.sa', '1'); } catch (e) {}
-    enterRole('ceo');
-    openAdmin();
-  } else {
-    toast('Code incorrect');
-  }
-}
-function adminList() {
-  let A; try { A = JSON.parse(localStorage.getItem(KA)); } catch (e) {}
-  if (!A) {
-    const E = (id, nom, resp, tel, ville, c, h, q, ann, me, ref, until, trialEnd, st) => ({ id, nom, resp, tel, ville, camions: c, chantiers: h, quinc: q, annual: ann, me, ref, until, trialEnd, st });
-    A = [E('e1', 'Sénégal Pavage SARL', 'Ibrahima Ba', '77 123 45 67', 'Dakar', 12, 3, 1, 1, 'Wave', 'TX84731920', day(325), day(-30), 'actif'), E('e2', 'Baobab Construction', 'Awa Diop', '78 234 56 78', 'Thiès', 6, 2, 1, 0, 'Orange Money', 'OM55120943', day(18), day(-20), 'actif'), E('e3', 'Quincaillerie Teranga', 'Moussa Sy', '76 345 67 89', 'Kaolack', 0, 0, 2, 0, 'Wave', 'TX90018834', day(29), day(-5), 'verif'), E('e4', 'Touba Hydraulique', 'Cheikh Mbacké', '77 456 78 90', 'Touba', 4, 1, 0, 0, '', '', '', day(9), 'essai'), E('e5', 'Mbao Transport BTP', 'Fatou Ndiaye', '70 567 89 01', 'Rufisque', 0, 0, 0, 0, '', '', '', day(-3), 'essai'), E('e6', 'Ndiaye et Frères', 'Ousmane Ndiaye', '77 678 90 12', 'Saint-Louis', 3, 1, 0, 0, 'Wave', 'TX66019287', day(-40), day(-70), 'susp')];
-    try { localStorage.setItem(KA, JSON.stringify(A)); } catch (e) {}
-  }
-  return A;
-}
-function saveAdmin(A) { try { localStorage.setItem(KA, JSON.stringify(A)); } catch (e) {} }
-function localRow() {
-  if (!S.co) return null; const a = access(), s = S.sub;
-  return { id: 'local', local: 1, nom: S.co.nom, resp: S.co.resp, tel: S.co.tel, email: S.co.email, ville: S.co.ville, camions: s ? s.trucks : 0, chantiers: s ? s.chantiers : 0, quinc: s ? s.quinc : 0, annual: s ? s.annual : 0, me: s ? s.method : '', ref: s ? s.ref : '', until: s ? s.until : '', trialEnd: S.trial ? S.trial.end : '', st: a === 'sub' ? (s.status === 'verif' ? 'verif' : 'actif') : a === 'susp' ? 'susp' : a === 'expired' ? 'expire' : 'essai' };
-}
-function adminStatus(e) {
-  if (e.st === 'susp') return ['Suspendu', 'bg-rose-500/20 text-rose-600 border-rose-500/30'];
-  if ((e.st === 'actif' || e.st === 'verif') && e.until < day()) return ['Expiré', 'bg-rose-500/20 text-rose-600 border-rose-500/30'];
-  if (e.st === 'actif') return ['Abonné actif', 'bg-emerald-500/20 text-emerald-600 border-emerald-500/30'];
-  if (e.st === 'verif') return ['Paiement à vérifier', 'bg-amber-500/20 text-amber-600 border-amber-500/30'];
-  if (e.trialEnd && e.trialEnd >= day()) return ['Essai · ' + daysLeft(e.trialEnd) + ' j', 'bg-blue-500/20 text-blue-600 border-blue-500/30'];
-  return ['Essai terminé', 'bg-slate-200 text-slate-600 border-slate-400'];
-}
-const monthly = e => e.camions * 15000 + e.chantiers * 50000 + e.quinc * 35000;
-function allCompanies() { const l = localRow(); return (l ? [l] : []).concat(adminList()); }
-function openAdmin() { $('adminPanel').classList.remove('hidden'); renderAdmin(); }
-function closeAdmin() { $('adminPanel').classList.add('hidden'); }
-function renderAdmin() {
-  const L = allCompanies(), q = ($('adm-q') ? $('adm-q').value : '').toLowerCase(), f = $('adm-f') ? $('adm-f').value : '';
-  const stt = e => adminStatus(e)[0];
-  const k = [['Entreprises', L.length, 'text-slate-900'], ['Essais en cours', L.filter(e => stt(e).startsWith('Essai ·')).length, 'text-blue-600'], ['Abonnés actifs', L.filter(e => stt(e) === 'Abonné actif').length, 'text-emerald-600'], ['À vérifier', L.filter(e => stt(e) === 'Paiement à vérifier').length, 'text-amber-600'], ['Revenu mensuel estimé', fm(L.filter(e => stt(e) === 'Abonné actif').reduce((s, e) => s + monthly(e), 0)) + ' F', 'text-orange-600']];
-  const R = L.filter(e => (!q || [e.nom, e.resp, e.tel, e.ville, e.ref].join(' ').toLowerCase().includes(q)) && (!f || stt(e).startsWith(f)));
-  $('adminPanel').innerHTML = `<div class="max-w-7xl mx-auto p-4 sm:p-6 space-y-5">
-    <div class="flex items-center justify-between"><h2 class="text-xl font-black text-slate-900 flex items-center gap-3"><img src="images/logo-256.png" alt="" class="w-9 h-9 rounded-lg"><span>Console administrateur MargeUp</span></h2><button onclick="closeAdmin()" class="bg-slate-100 text-slate-600 px-3 py-2 rounded-xl text-xs font-bold">Fermer</button></div>
-    <p class="text-[11px] text-amber-700 bg-amber-500/10 border border-amber-500/30 rounded-lg p-2">Pour l’instant, cette liste contient des entreprises d’exemple et l’entreprise créée sur cet appareil. Avec Supabase, elle affichera toutes vos vraies entreprises.</p>
-    <div class="grid grid-cols-2 lg:grid-cols-5 gap-3">${k.map(x => `<div class="bg-slate-50 border border-slate-200 rounded-xl p-4"><div class="text-[11px] text-slate-500">${x[0]}</div><div class="text-xl font-black ${x[2]}">${x[1]}</div></div>`).join('')}</div>
-    <div class="flex flex-wrap gap-2"><input id="adm-q" oninput="renderAdmin()" value="${esc(q)}" placeholder="Rechercher une entreprise, une ville, un numéro…" class="${INPUT} flex-1 min-w-[200px]"><select id="adm-f" onchange="renderAdmin()" class="${INPUT} w-auto"><option value="">Tous les statuts</option>${['Essai ·', 'Abonné actif', 'Paiement à vérifier', 'Essai terminé', 'Expiré', 'Suspendu'].map(s => `<option value="${s}" ${s === f ? 'selected' : ''}>${s.replace(' ·', '')}</option>`).join('')}</select></div>
-    <div class="bg-slate-50 border border-slate-200 rounded-2xl overflow-x-auto"><table class="w-full text-left text-xs"><thead class="bg-white text-slate-500 uppercase"><tr><th class="p-3">Entreprise</th><th class="p-3">Forfait</th><th class="p-3">Mensuel</th><th class="p-3">Fin</th><th class="p-3">Statut</th></tr></thead><tbody class="divide-y divide-slate-200">${R.map(e => { const s = adminStatus(e); return `<tr class="hover:bg-slate-50 cursor-pointer" onclick="adminDetail('${e.id}')"><td class="p-3"><div class="font-bold text-slate-900">${esc(e.nom)} ${e.local ? '<span class="text-[10px] bg-orange-500/20 text-orange-600 px-1.5 py-0.5 rounded">Cet appareil</span>' : ''}</div><div class="text-slate-500">${esc(e.resp || '—')} · ${esc(e.ville || '—')} · ${esc(e.tel || '—')}</div></td><td class="p-3 text-slate-600">${e.camions} camion(s), ${e.chantiers} chantier(s), ${e.quinc} dépôt(s)</td><td class="p-3 text-slate-900">${fm(monthly(e))} F</td><td class="p-3 text-slate-600">${fr(e.until || e.trialEnd)}</td><td class="p-3"><span class="px-2 py-0.5 rounded border text-[10px] font-bold ${s[1]}">${s[0]}</span></td></tr>`; }).join('') || '<tr><td colspan="5" class="p-6 text-center text-slate-500">Aucune entreprise.</td></tr>'}</tbody></table></div>
-    <button onclick="adminCsv()" class="bg-slate-100 text-slate-600 px-3 py-2 rounded-xl text-xs font-bold">Exporter la liste (CSV)</button></div>`;
-}
-function adminDetail(id) {
-  const e = allCompanies().find(x => x.id === id); if (!e) return; const s = adminStatus(e);
-  const b = (a, t, c) => `<button onclick="adminAct('${id}','${a}')" class="px-3 py-2 rounded-xl text-xs font-bold ${c}">${t}</button>`;
-  openModal(`<h3 class="text-base font-bold text-slate-900">${esc(e.nom)}</h3><div class="text-xs text-slate-600 space-y-1"><div>Responsable : ${esc(e.resp || '—')} · ${esc(e.tel || '—')} · ${esc(e.ville || '—')}</div><div>Forfait : ${e.camions} camion(s), ${e.chantiers} chantier(s), ${e.quinc} dépôt(s) · ${fm(monthly(e))} F par mois</div><div>Paiement : ${esc(e.me || '—')} · Référence ${esc(e.ref || '—')}</div><div>Fin d’abonnement : ${fr(e.until)} · Fin d’essai : ${fr(e.trialEnd)}</div><div>Statut : <b>${s[0]}</b></div></div><div class="flex flex-wrap gap-2 pt-2">${b('ok', 'Valider le paiement', 'bg-emerald-600 text-white')}${b('ext', 'Prolonger de 30 jours', 'bg-slate-200 text-slate-900')}${b('trial', 'Essai +15 jours', 'bg-blue-600 text-white')}${b('susp', 'Suspendre', 'bg-rose-600 text-white')}${b('react', 'Réactiver', 'bg-slate-200 text-slate-900')}</div><div class="flex justify-end"><button onclick="closeModal()" class="px-4 py-2 rounded-xl text-xs bg-slate-100 text-slate-600">Fermer</button></div>`);
-}
-function adminAct(id, a) {
-  const A = adminList(), e = id === 'local' ? null : A.find(x => x.id === id);
-  if (id === 'local') {
-    if (a === 'ok' && S.sub) { S.sub.status = 'ok'; delete S.sub.susp; }
-    if (a === 'susp') { if (S.sub) S.sub.susp = 1; else if (S.trial) S.trial.end = day(-1); }
-    if (a === 'react' && S.sub) delete S.sub.susp;
-    if (a === 'ext' && S.sub) S.sub.until = addDays(S.sub.until > day() ? S.sub.until : day(), 30);
-    if (a === 'trial' && S.trial) S.trial.end = addDays(S.trial.end > day() ? S.trial.end : day(), 15);
-    save(); renderAll();
-  } else if (e) {
-    if (a === 'ok') e.st = 'actif';
-    if (a === 'susp') e.st = 'susp';
-    if (a === 'react') e.st = e.until ? 'actif' : 'essai';
-    if (a === 'ext') e.until = addDays(e.until > day() ? e.until : day(), 30);
-    if (a === 'trial') e.trialEnd = addDays(e.trialEnd > day() ? e.trialEnd : day(), 15);
-    saveAdmin(A);
-  }
-  closeModal(); renderAdmin(); toast('Action effectuée');
-}
-function adminCsv() {
-  const rows = [['Entreprise', 'Responsable', 'Téléphone', 'Ville', 'Camions', 'Chantiers', 'Dépôts', 'Moyen', 'Référence', 'Fin abonnement', 'Fin essai', 'Statut']].concat(allCompanies().map(e => [e.nom, e.resp, e.tel, e.ville, e.camions, e.chantiers, e.quinc, e.me, e.ref, e.until, e.trialEnd, adminStatus(e)[0]]));
-  const csv = rows.map(r => r.map(v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"').join(';')).join('\n');
-  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv' })); a.download = 'entreprises-margeup.csv'; a.click();
-}
-
-
 /* ---------- VENTES (DÉTAIL ET GROS) ET FACTURES ---------- */
 const PAYS = ['Espèces', 'Wave', 'Orange Money', 'Crédit'];
 function openSaleModal() {
@@ -2010,10 +1917,7 @@ function roNotice() { toast('La direction consulte seulement : les saisies sont 
   const f = window[n]; if (typeof f === 'function') window[n] = function () { if (ro()) return roNotice(); return f.apply(this, arguments); };
 });
 
-/* ---------- ACCÈS MAINTENANCE (invisible : 7 clics rapides sur le logo, ou adresse se terminant par #maintenance) ---------- */
-const isSA = () => { try { return sessionStorage.getItem('safebtp.sa') === '1'; } catch (e) { return false; } };
-let _lc = 0, _lt = null;
-function brandTap() { _lc++; clearTimeout(_lt); _lt = setTimeout(() => { _lc = 0; }, 2500); if (_lc >= 7) { _lc = 0; openMaint(); } }
+/* Maintenance / Admin : retiré du code client. */
 
 /* ---------- DÉMARRAGE ---------- */
 document.addEventListener('submit', e => { const f = e.target.dataset && e.target.dataset.f; if (f && FORMS[f]) { e.preventDefault(); if (ro() && FIELD_FORMS.includes(f)) return roNotice(); const d = {}; new FormData(e.target).forEach((v, k) => { if (k.slice(-2) === '[]') (d[k] = d[k] || []).push(v); else d[k] = v; }); FORMS[f](d); } });
@@ -2021,7 +1925,7 @@ window.onload = async function () {
   try { const r = sessionStorage.getItem('safebtp.role'), mu = S.team.find(m => m.id === sessionStorage.getItem('safebtp.user')); if (r && r !== 'ceo' && ((mu && mu.role === r) || !S.co)) { curRole = r; curUser = mu || null; } } catch (e) {}
   $('roleSelector').value = curRole;
   changeRole(curRole); updatePricingCalculator(); renderAll();
-  if (typeof location !== 'undefined' && location.hash === '#maintenance') openMaint();
+  // Accès maintenance désactivé
   // Restauration d'arrière-plan résiliente depuis IndexedDB
   await syncFromIndexedDB();
 };
