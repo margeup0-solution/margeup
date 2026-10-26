@@ -31,6 +31,8 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Supabase JS Client v2 (Officiel) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <!-- Google Fonts Inter -->
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
   <!-- Couleurs MargeUp pour Tailwind -->
@@ -76,6 +78,7 @@
 
       <!-- ENTREPRISE, RÔLE ET CONSOLE ADMIN -->
       <div class="flex items-center space-x-3">
+        <div id="syncIndicator" class="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200"></div>
         <button id="coBtn" onclick="openCompanyModal()" class="bg-slate-50 border border-slate-200 hover:border-orange-500 text-slate-700 text-xs font-semibold rounded-xl px-3 py-2.5 max-w-[150px] sm:max-w-[220px] truncate" title="Mon entreprise"></button>
         <button id="teamBtn" onclick="openTeamModal()" class="ceo-only bg-slate-50 border border-slate-200 hover:border-orange-500 text-slate-700 text-xs font-semibold rounded-xl px-3 py-2.5" title="Mon équipe"><i class="fa-solid fa-users text-orange-600"></i> <span class="hidden sm:inline">Équipe</span></button>
         <div class="bg-slate-50 border border-slate-200 rounded-xl p-1.5 flex items-center space-x-2">
@@ -140,10 +143,10 @@
             <span>ERP sur mesure pour le BTP, le génie civil et le transport au Sénégal</span>
           </div>
           <h1 class="text-3xl sm:text-5xl font-black text-white leading-tight">
-            Faites monter votre marge : chantiers, camions et quincailleries sous contrôle.
+            Faites monter votre marge : quincailleries, dépôts et flottes de transport sous contrôle.
           </h1>
           <p class="text-slate-300 text-sm sm:text-base leading-relaxed">
-            MargeUp vous montre où part votre argent : carburant, stock, dépenses de chantier et retards. Vos équipes saisissent sur le terrain, vous suivez votre marge en toute confiance. Les factures se partagent par WhatsApp et l’abonnement se règle par Wave ou Orange Money.
+            MargeUp vous montre où part votre argent : carburant, stock et ventes en magasin. Vos équipes saisissent sur le terrain (au comptoir ou au volant), vous pilotez votre marge en toute confiance avec synchronisation multi-appareils.
           </p>
           <p class="text-emerald-400 text-sm font-semibold"><i class="fa-solid fa-gift"></i> 15 jours d’essai gratuit, sans paiement ni carte.</p>
           <div class="flex flex-wrap gap-4 pt-2">
@@ -168,7 +171,7 @@
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div class="bg-white border border-slate-200 rounded-2xl p-5 space-y-3"><div class="flex items-center gap-3"><span class="w-10 h-10 rounded-xl bg-orange-500/15 text-orange-600 flex items-center justify-center"><i class="fa-solid fa-gas-pump"></i></span><h3 class="text-base font-bold text-slate-900">Le carburant</h3></div><p class="text-xs text-rose-700"><b>Le problème :</b> des pleins que personne ne contrôle.</p><p class="text-xs text-emerald-700"><b>Avec MargeUp :</b> chaque plein est enregistré avec ses litres, son montant et son camion. Les statistiques des chauffeurs montrent qui consomme le moins.</p></div>
           <div class="bg-white border border-slate-200 rounded-2xl p-5 space-y-3"><div class="flex items-center gap-3"><span class="w-10 h-10 rounded-xl bg-orange-500/15 text-orange-600 flex items-center justify-center"><i class="fa-solid fa-boxes-stacked"></i></span><h3 class="text-base font-bold text-slate-900">Le stock</h3></div><p class="text-xs text-rose-700"><b>Le problème :</b> du ciment et du fer qui disparaissent.</p><p class="text-xs text-emerald-700"><b>Avec MargeUp :</b> chaque arrivage, vente et sortie vers un chantier est tracé. Le stock est juste tous les jours, sans inventaire de fin d’année.</p></div>
-          <div class="bg-white border border-slate-200 rounded-2xl p-5 space-y-3"><div class="flex items-center gap-3"><span class="w-10 h-10 rounded-xl bg-orange-500/15 text-orange-600 flex items-center justify-center"><i class="fa-solid fa-building"></i></span><h3 class="text-base font-bold text-slate-900">Les chantiers</h3></div><p class="text-xs text-rose-700"><b>Le problème :</b> des bâtiments en retard découverts trop tard.</p><p class="text-xs text-emerald-700"><b>Avec MargeUp :</b> niveau en cours, avancement par étape, prévision de l’ingénieur et temps restant : l’écart s’affiche dès qu’il apparaît.</p></div>
+          <div class="bg-white border border-slate-200 rounded-2xl p-5 space-y-3"><div class="flex items-center gap-3"><span class="w-10 h-10 rounded-xl bg-orange-500/15 text-orange-600 flex items-center justify-center"><i class="fa-solid fa-cash-register"></i></span><h3 class="text-base font-bold text-slate-900">La caisse et les factures</h3></div><p class="text-xs text-rose-700"><b>Le problème :</b> des ventes au comptoir non enregistrées et des tickets égarés.</p><p class="text-xs text-emerald-700"><b>Avec MargeUp :</b> chaque vente au détail ou en gros génère une facture PDF instantanée, partageable par WhatsApp et déduite du stock.</p></div>
           <div class="bg-white border border-slate-200 rounded-2xl p-5 space-y-3"><div class="flex items-center gap-3"><span class="w-10 h-10 rounded-xl bg-orange-500/15 text-orange-600 flex items-center justify-center"><i class="fa-solid fa-receipt"></i></span><h3 class="text-base font-bold text-slate-900">Les dépenses</h3></div><p class="text-xs text-rose-700"><b>Le problème :</b> des achats qui ne sont rattachés à aucun chantier.</p><p class="text-xs text-emerald-700"><b>Avec MargeUp :</b> chaque dépense, sortie de stock ou plein peut être imputé au chantier concerné, pour connaître le vrai coût.</p></div>
         </div>
       </div>
@@ -179,8 +182,8 @@
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div class="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-2"><div class="w-8 h-8 rounded-full bg-orange-500 text-white font-black flex items-center justify-center text-sm">1</div><h3 class="text-sm font-bold text-slate-900">Créez votre espace</h3><p class="text-xs text-slate-600 leading-relaxed">Donnez le nom de votre entreprise. Vous profitez de 15 jours d’essai gratuit, sans engagement.</p></div>
           <div class="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-2"><div class="w-8 h-8 rounded-full bg-orange-500 text-white font-black flex items-center justify-center text-sm">2</div><h3 class="text-sm font-bold text-slate-900">Ajoutez votre équipe</h3><p class="text-xs text-slate-600 leading-relaxed">Un admin par chantier, par quincaillerie et par camion, avec son nom, son e-mail et son téléphone.</p></div>
-          <div class="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-2"><div class="w-8 h-8 rounded-full bg-orange-500 text-white font-black flex items-center justify-center text-sm">3</div><h3 class="text-sm font-bold text-slate-900">L’équipe saisit sur le terrain</h3><p class="text-xs text-slate-600 leading-relaxed">Ventes, pleins, voyages, pannes, dépenses et avancement des bâtiments sont enregistrés à la source.</p></div>
-          <div class="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-2"><div class="w-8 h-8 rounded-full bg-orange-500 text-white font-black flex items-center justify-center text-sm">4</div><h3 class="text-sm font-bold text-slate-900">Vous pilotez la marge</h3><p class="text-xs text-slate-600 leading-relaxed">Tableau de bord, factures en PDF, classement des chauffeurs et alertes de retard, en un coup d’œil.</p></div>
+          <div class="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-2"><div class="w-8 h-8 rounded-full bg-orange-500 text-white font-black flex items-center justify-center text-sm">3</div><h3 class="text-sm font-bold text-slate-900">L’équipe saisit sur le terrain</h3><p class="text-xs text-slate-600 leading-relaxed">Ventes au comptoir, arrivages de stock, pleins de carburant, voyages et pannes sont saisis directement à la source.</p></div>
+          <div class="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-2"><div class="w-8 h-8 rounded-full bg-orange-500 text-white font-black flex items-center justify-center text-sm">4</div><h3 class="text-sm font-bold text-slate-900">Vous pilotez la marge</h3><p class="text-xs text-slate-600 leading-relaxed">Tableau de bord CEO épuré, factures PDF, classement des chauffeurs et alertes de stock/pannes en un coup d’œil.</p></div>
         </div>
       </div>
 

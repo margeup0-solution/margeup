@@ -5,6 +5,176 @@
 /* ---------- RÉGLAGES & CONFIGURATION ---------- */
 const CFG = window.MARGEUP_CONFIG || { pay: { wave: '', om: '', num: '' }, contact: { tel: '771906476', email: 'margeup0@gmail.com' } };
 const PAY = CFG.pay || { wave: '', om: '', num: '' };
+
+/* ---------- CLIENT SUPABASE & SYNCHRONISATION MULTI-APPAREILS ---------- */
+let _sbClient = null;
+
+function getSupabase() {
+  if (_sbClient) return _sbClient;
+  const cfg = window.MARGEUP_CONFIG?.supabase;
+  if (cfg && cfg.url && cfg.anonKey && window.supabase) {
+    try {
+      _sbClient = window.supabase.createClient(cfg.url, cfg.anonKey);
+      return _sbClient;
+    } catch (e) {
+      console.warn('[MargeUp] Erreur initialisation Supabase client:', e);
+    }
+  }
+  return null;
+}
+
+// File d'attente hors-ligne (Offline Queue) pour le stock et les ventes
+const OFFLINE_QUEUE_KEY = 'margeup_offline_queue_v1';
+
+function getOfflineQueue() {
+  try {
+    return JSON.parse(localStorage.getItem(OFFLINE_QUEUE_KEY) || '[]');
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveOfflineQueue(queue) {
+  try {
+    localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
+  } catch (e) {}
+  updateSyncIndicator();
+}
+
+function enqueueOfflineAction(action, payload) {
+  const queue = getOfflineQueue();
+  queue.push({
+    id: uid(),
+    action,
+    payload,
+    timestamp: new Date().toISOString()
+  });
+  saveOfflineQueue(queue);
+  toast('Saisie enregistrée en local (mode hors-ligne)');
+}
+
+async function processOfflineQueue() {
+  const sb = getSupabase();
+  if (!sb || !navigator.onLine) {
+    updateSyncIndicator();
+    return;
+  }
+  const queue = getOfflineQueue();
+  if (!queue.length) {
+    updateSyncIndicator();
+    return;
+  }
+
+  const remaining = [];
+  for (const item of queue) {
+    try {
+      if (item.action === 'stock') {
+        const d = item.payload;
+        await sb.from('articles').upsert({
+          company_id: S.co?.id,
+          nom: d.name,
+          categorie: d.cat || 'Divers',
+          unite: d.unit || 'unités',
+          stock_actuel: d.qty,
+          prix_detail: d.price || 0,
+          prix_gros: d.priceGros || d.price || 0
+        });
+      } else if (item.action === 'sale') {
+        const s = item.payload;
+        await sb.from('ventes').insert({
+          company_id: S.co?.id,
+          numero_facture: s.num,
+          client_nom: s.client?.nom || 'Client comptoir',
+          client_tel: s.client?.tel || '',
+          type_vente: s.stype || 'detail',
+          mode_paiement: s.pay || 'Espèces',
+          montant_total: s.total || 0,
+          date_vente: s.date || day()
+        });
+      }
+    } catch (err) {
+      console.warn('[MargeUp Sync] Erreur synchro item queue:', err);
+      remaining.push(item);
+    }
+  }
+
+  saveOfflineQueue(remaining);
+  if (queue.length > remaining.length) {
+    toast((queue.length - remaining.length) + ' opération(s) synchronisée(s) vers le Cloud !');
+    await syncDataFromCloud();
+  }
+}
+
+// Synchronisation bidirectionnelle depuis Supabase
+async function syncDataFromCloud() {
+  const sb = getSupabase();
+  if (!sb || !navigator.onLine || !S.co?.id) return;
+  try {
+    const { data: articles, error: errArt } = await sb.from('articles').select('*').eq('company_id', S.co.id);
+    if (!errArt && articles && articles.length) {
+      S.inventory = articles.map(a => ({
+        id: a.id,
+        depot: 'd1',
+        name: a.nom,
+        cat: a.categorie,
+        qty: Number(a.stock_actuel),
+        unit: a.unite,
+        price: Number(a.prix_detail),
+        priceGros: Number(a.prix_gros)
+      }));
+    }
+
+    const { data: ventes, error: errVen } = await sb.from('ventes').select('*').eq('company_id', S.co.id).order('created_at', { ascending: false });
+    if (!errVen && ventes && ventes.length) {
+      S.sales = ventes.map(v => ({
+        id: v.id,
+        num: v.numero_facture,
+        depot: 'd1',
+        date: v.date_vente,
+        stype: v.type_vente,
+        kind: 'particulier',
+        client: { nom: v.client_nom, tel: v.client_tel },
+        pay: v.mode_paiement,
+        lines: [],
+        total: Number(v.montant_total)
+      }));
+    }
+
+    save();
+    renderAll();
+  } catch (e) {
+    console.warn('[MargeUp Cloud Sync]', e);
+  }
+}
+
+// Indicateur visuel d'état de synchronisation
+function updateSyncIndicator() {
+  const el = $('syncIndicator');
+  if (!el) return;
+  const queue = getOfflineQueue();
+  const sb = getSupabase();
+
+  if (!navigator.onLine) {
+    el.innerHTML = '<span class="w-2 h-2 rounded-full bg-amber-500"></span> <span>Hors-ligne' + (queue.length ? ' (' + queue.length + ' en attente)' : '') + '</span>';
+    el.className = 'hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200';
+  } else if (!sb) {
+    el.innerHTML = '<span class="w-2 h-2 rounded-full bg-slate-400"></span> <span>Mode Local</span>';
+    el.className = 'hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200';
+  } else if (queue.length > 0) {
+    el.innerHTML = '<span class="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span> <button onclick="processOfflineQueue()" class="hover:underline">Synchro (' + queue.length + ' en attente)</button>';
+    el.className = 'hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-blue-50 text-blue-800 border border-blue-200 cursor-pointer';
+  } else {
+    el.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-500"></span> <span>En ligne & Synchronisé</span>';
+    el.className = 'hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200';
+  }
+}
+
+window.addEventListener('online', () => {
+  updateSyncIndicator();
+  processOfflineQueue();
+});
+window.addEventListener('offline', updateSyncIndicator);
+
 const CONTACT = { tel: '771906476', email: 'margeup0@gmail.com' };
 const TRIAL_DAYS = 15;
 const KEY = 'safebtp.v3', KA = 'safebtp.admin.v3';
@@ -1457,7 +1627,7 @@ function clearDemo() {
 }
 function renderAll() {
   $('coBtn').innerHTML = '<i class="fa-solid fa-building text-orange-600"></i> ' + esc(S.co ? S.co.nom : 'Créer mon espace');
-  renderBanner(); renderDemoBar(); renderInventory(); renderPannes(); renderFleet(); renderTripsJournal(); renderDrivers(); renderChantiers(); renderCeo(); renderContact(); renderReviews();
+  updateSyncIndicator(); renderBanner(); renderDemoBar(); renderInventory(); renderPannes(); renderFleet(); renderTripsJournal(); renderDrivers(); renderChantiers(); renderCeo(); renderContact(); renderReviews();
 }
 
 /* ---------- FORMULAIRES ---------- */
@@ -1516,17 +1686,65 @@ const FORMS = {
     });
     const total = lines.reduce((s, l) => s + l.qty * l.pu, 0);
     const sale = { id: 'v' + uid(), num: 'FAC-' + day().slice(0, 4) + '-' + String(++S.seq).padStart(4, '0'), depot: selDepot, date: day(), stype: d.stype, kind: d.kind, client: { nom: (d.cnom || '').trim() || 'Client comptoir', tel: d.ctel || '' }, pay: d.pay, lines, total };
-    S.sales.unshift(sale); save(); renderAll(); openInvoice(sale.id);
+    S.sales.unshift(sale); save();
+    // Enregistrement cloud ou file d'attente hors-ligne
+    const sb = getSupabase();
+    if (sb && navigator.onLine) {
+      sb.from('ventes').insert({
+        company_id: S.co?.id,
+        numero_facture: sale.num,
+        client_nom: sale.client?.nom || 'Client comptoir',
+        client_tel: sale.client?.tel || '',
+        type_vente: sale.stype || 'detail',
+        mode_paiement: sale.pay || 'Espèces',
+        montant_total: sale.total || 0,
+        date_vente: sale.date || day()
+      }).then(() => { updateSyncIndicator(); }).catch(() => {
+        enqueueOfflineAction('sale', sale);
+      });
+    } else {
+      enqueueOfflineAction('sale', sale);
+    }
+    renderAll(); openInvoice(sale.id);
   },
-  co(d) {
+  async co(d) {
     const nom = (d.nom || '').trim();
     const resp = (d.resp || '').trim();
     const email = (d.email || '').trim().toLowerCase();
     const tel = (d.tel || '').trim();
     const ville = (d.ville || '').trim();
+    const password = d.pw ? d.pw.trim() : '';
 
     if (!nom || !resp || !/^\S+@\S+\.\S+$/.test(email) || tel.replace(/\D/g, '').length < 9) {
       return toast('Le nom, l’e-mail et le téléphone du patron sont obligatoires (min 9 chiffres).');
+    }
+
+    // Si Supabase est connecté, inscription sécurisée via Supabase Auth avec envoi d'email réel
+    const sb = getSupabase();
+    if (sb && password && password.length >= 6) {
+      try {
+        const { data: authData, error: authErr } = await sb.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              responsable_nom: resp,
+              company_name: nom,
+              telephone: tel,
+              ville
+            }
+          }
+        });
+        if (authErr) {
+          toast('Supabase Auth : ' + authErr.message);
+        } else {
+          toast('Email de confirmation envoyé à ' + email + ' !');
+          closeModal();
+          return;
+        }
+      } catch (err) {
+        console.warn('[Supabase Auth SignUp]', err);
+      }
     }
 
     // Si l'entreprise existe déjà et que l'e-mail n'a pas changé, mise à jour directe sans re-vérification
@@ -1646,7 +1864,25 @@ const FORMS = {
         lastChantier: ''
       });
     }
-    save(); closeModal(); renderAll(); toast('Stock mis à jour avec conversion exacte');
+    save();
+    // Enregistrement cloud ou file d'attente hors-ligne
+    const sb = getSupabase();
+    if (sb && navigator.onLine) {
+      sb.from('articles').upsert({
+        company_id: S.co?.id,
+        nom: d.name,
+        categorie: d.cat || 'Divers',
+        unite: d.unit || 'unités',
+        stock_actuel: (ex ? ex.qty : finalQty),
+        prix_detail: +d.price || 0,
+        prix_gros: +d.priceGros || +d.price || 0
+      }).then(() => { updateSyncIndicator(); }).catch(() => {
+        enqueueOfflineAction('stock', { name: d.name, cat: d.cat, unit: d.unit, qty: (ex ? ex.qty : finalQty), price: +d.price, priceGros: +d.priceGros });
+      });
+    } else {
+      enqueueOfflineAction('stock', { name: d.name, cat: d.cat, unit: d.unit, qty: (ex ? ex.qty : finalQty), price: +d.price, priceGros: +d.priceGros });
+    }
+    closeModal(); renderAll(); toast('Stock mis à jour avec conversion exacte');
   },
   dispatch(d) {
     const i = S.inventory.find(x => x.id == d.id), q = +d.qty, c = S.chantiers.find(x => x.id === d.chantier);

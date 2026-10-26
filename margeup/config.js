@@ -1,13 +1,18 @@
 /* MargeUp - Configuration globale client
-   Ce fichier contient les paramètres d'environnement non-secrets injectables. */
+   Paramètres d'environnement publics et injectables. */
 window.MARGEUP_CONFIG = {
-  // Numéro de paiement marchand Wave / Orange Money (configurable)
+  // Supabase (Projet de test)
+  supabase: {
+    url: (typeof process !== 'undefined' && process.env && process.env.NEXT_PUBLIC_SUPABASE_URL) || '',
+    anonKey: (typeof process !== 'undefined' && process.env && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) || ''
+  },
+  // Paiement manuel (Wave / Orange Money)
   pay: {
     wave: '',
     om: '',
-    num: (typeof process !== 'undefined' && process.env && process.env.MERCHANT_PAYMENT_NUMBER) || ''
+    num: (typeof process !== 'undefined' && process.env && process.env.MERCHANT_PAYMENT_NUMBER) || '78 332 62 39'
   },
-  // Coordonnées de contact
+  // Contact officiel Sénégal
   contact: {
     tel: '771906476',
     email: 'margeup0@gmail.com'
