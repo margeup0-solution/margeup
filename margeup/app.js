@@ -196,7 +196,7 @@ const PHASES = [['terr','Terrassement et fondations'],['gros','Gros œuvre (él�
 const TYPE_IMG = { tracteur: 'images/engins.jpg', toupie: 'images/engins.jpg', benne: 'images/engins.jpg' }; // une seule photo d'engins pour l'instant : ajoutez shacman.jpg / toupie.jpg puis changez ici
 const ROLE_LABEL = { magasinier: 'Magasinier', transport: 'Transport', chantier: 'Chef de chantier' };
 const GATED = ['ceo','magasinier','transport','chantier'];
-const INPUT = 'w-full bg-white border border-slate-300 rounded-xl p-2.5 text-sm text-slate-900 focus:outline-none focus:border-orange-500';
+const INPUT = 'w-full bg-white border border-slate-300 rounded-xl p-2.5 text-sm text-slate-900 focus:outline-none focus:border-yellow-400 focus:ring-1 focus:ring-yellow-400';
 
 /* ---------- OUTILS ---------- */
 const $ = id => document.getElementById(id);
@@ -533,8 +533,8 @@ const canUse = () => ['trial', 'sub', 'visitor'].includes(access());
 
 function renderBanner() {
   const a = access(), b = $('statusBanner'); let h = '';
-  const btn = (S.co && curRole !== 'ceo') ? '' : '<button onclick="subscribeNow()" class="bg-orange-500 hover:bg-orange-600 text-white font-bold px-3 py-1.5 rounded-lg text-xs">S’abonner</button>';
-  if (a === 'visitor') h = `<div class="bg-blue-500/10 border-b border-blue-500/30 text-blue-800"><div class="max-w-7xl mx-auto px-4 py-2 text-xs flex flex-wrap items-center justify-between gap-2"><span><i class="fa-solid fa-eye"></i> Mode visiteur : explorez toutes les fonctions avec des données d’exemple, sans inscription.</span><button onclick="openCompanyModal()" class="bg-orange-500 hover:bg-orange-600 text-white font-bold px-3 py-1.5 rounded-lg text-xs">Créer mon espace : 15 jours gratuits</button></div></div>`;
+  const btn = (S.co && curRole !== 'ceo') ? '' : '<button onclick="subscribeNow()" class="bg-yellow-400 hover:bg-yellow-300 text-slate-950 font-bold shadow-md px-3 py-1.5 rounded-lg text-xs">S’abonner</button>';
+  if (a === 'visitor') h = `<div class="bg-blue-500/10 border-b border-blue-500/30 text-blue-800"><div class="max-w-7xl mx-auto px-4 py-2 text-xs flex flex-wrap items-center justify-between gap-2"><span><i class="fa-solid fa-eye"></i> Mode visiteur : explorez toutes les fonctions avec des données d’exemple, sans inscription.</span><button onclick="openCompanyModal()" class="bg-yellow-400 hover:bg-yellow-300 text-slate-950 font-bold shadow-md px-3 py-1.5 rounded-lg text-xs">Créer mon espace : 15 jours gratuits</button></div></div>`;
   if (a === 'trial') { const n = daysLeft(S.trial.end); h = `<div class="bg-emerald-500/10 border-b border-emerald-500/30 text-emerald-700"><div class="max-w-7xl mx-auto px-4 py-2 text-xs flex flex-wrap items-center justify-between gap-2"><span><i class="fa-solid fa-gift"></i> Essai gratuit : ${n === 0 ? 'dernier jour' : n + ' jour' + (n > 1 ? 's' : '') + ' restant' + (n > 1 ? 's' : '')}. Toutes les fonctions sont ouvertes.</span>${btn}</div></div>`; }
   if (a === 'expired') h = `<div class="bg-rose-500/10 border-b border-rose-500/30 text-rose-700"><div class="max-w-7xl mx-auto px-4 py-2 text-xs flex flex-wrap items-center justify-between gap-2"><span><i class="fa-solid fa-lock"></i> Votre essai gratuit est terminé. Abonnez-vous pour rouvrir vos modules. Vos données sont conservées.</span>${btn}</div></div>`;
   if (a === 'susp') h = `<div class="bg-rose-500/10 border-b border-rose-500/30 text-rose-700"><div class="max-w-7xl mx-auto px-4 py-2 text-xs"><i class="fa-solid fa-ban"></i> Abonnement suspendu. Contactez MargeUp.</div></div>`;
@@ -555,11 +555,28 @@ function switchTab(tabId) {
   if (tabId === 'tarifs' && S.co && curRole !== 'ceo') { toast('Les tarifs sont réservés au patron (rôle CEO).'); return; }
   let view = tabId;
   if (GATED.includes(tabId) && !canUse()) { view = 'locked'; fillLock(); }
+  
   document.querySelectorAll('main > section').forEach(s => s.classList.add('hidden'));
-  $('view-' + view).classList.remove('hidden');
-  document.querySelectorAll('.nav-tab').forEach(b => { b.classList.remove('bg-orange-500', 'text-white'); b.classList.add('text-slate-500'); });
+  const targetSection = $('view-' + view);
+  if (targetSection) targetSection.classList.remove('hidden');
+
+  // Mise à jour de l'en-tête selon qu'on est sur le site public ou dans l'ERP
+  if (tabId === 'accueil') {
+    updateHeaderMode(S.co ? 'erp' : 'landing');
+  } else {
+    updateHeaderMode('erp');
+  }
+
+  // Style des boutons d'onglets ERP
+  document.querySelectorAll('.nav-tab').forEach(b => {
+    b.classList.remove('bg-yellow-400', 'text-slate-950', 'bg-orange-500', 'text-white');
+    b.classList.add('text-slate-400');
+  });
   const ab = $('tab-' + tabId);
-  if (ab) { ab.classList.add('bg-orange-500', 'text-white'); ab.classList.remove('text-slate-500'); }
+  if (ab) {
+    ab.classList.add('bg-yellow-400', 'text-slate-950');
+    ab.classList.remove('text-slate-400');
+  }
 }
 function switchRoleAndTab(role) { goModule(role); }
 function goModule(role) { if (curRole === 'ceo' || curRole === role) switchTab(role); else requestRole(role, () => switchTab(role)); }
@@ -597,7 +614,7 @@ function openModal(html) { $('modalBox').innerHTML = html; $('modal').classList.
 function closeModal() { $('modal').classList.add('hidden'); }
 const fld = (l, n, t = 'text', a = '') => `<label class="block text-xs font-semibold text-slate-500">${l}<input name="${n}" type="${t}" ${a} class="${INPUT} mt-1"></label>`;
 const sel = (l, n, o) => `<label class="block text-xs font-semibold text-slate-500">${l}<select name="${n}" class="${INPUT} mt-1">${o.map(x => `<option value="${esc(x[0])}">${esc(x[1])}</option>`).join('')}</select></label>`;
-const formWrap = (title, f, body, ok, cancel = true) => `<h3 class="text-base font-bold text-slate-900">${title}</h3><form data-f="${f}" class="space-y-3">${body}<div class="flex justify-end gap-2 pt-2">${cancel ? '<button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl text-xs bg-slate-100 text-slate-600">Annuler</button>' : ''}<button class="px-4 py-2 rounded-xl text-xs bg-orange-500 text-white font-bold">${ok}</button></div></form>`;
+const formWrap = (title, f, body, ok, cancel = true) => `<h3 class="text-base font-bold text-slate-900">${title}</h3><form data-f="${f}" class="space-y-3">${body}<div class="flex justify-end gap-2 pt-2">${cancel ? '<button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl text-xs bg-slate-100 text-slate-600">Annuler</button>' : ''}<button class="px-4 py-2 rounded-xl text-xs bg-yellow-400 text-slate-950 font-bold">${ok}</button></div></form>`;
 
 /* ---------- ENTREPRISE & VÉRIFICATION EMAIL ---------- */
 function generateVerificationCode() {
@@ -706,7 +723,7 @@ function openVerificationModal() {
         </div>
 
         <div class="space-y-2 pt-1">
-          <button type="submit" class="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-xl text-xs flex items-center justify-center gap-2 shadow-md transition cursor-pointer">
+          <button type="submit" class="w-full bg-yellow-400 hover:bg-yellow-300 text-slate-950 font-bold shadow-md py-3 rounded-xl text-xs flex items-center justify-center gap-2 shadow-md transition cursor-pointer">
             <i class="fa-solid fa-circle-check"></i> Confirmer le code et activer mon espace
           </button>
           
@@ -768,8 +785,8 @@ function setBillingCycle(c) {
   const isAnn = c === 'annual';
   const bm = $('btn-billing-monthly'), ba = $('btn-billing-annual');
   if (bm && ba) {
-    bm.className = isAnn ? 'px-4 py-1.5 rounded-full text-xs font-bold transition text-slate-600 hover:text-slate-900 cursor-pointer' : 'px-4 py-1.5 rounded-full text-xs font-bold transition bg-orange-500 text-white cursor-pointer';
-    ba.className = isAnn ? 'px-4 py-1.5 rounded-full text-xs font-bold transition bg-orange-500 text-white cursor-pointer' : 'px-4 py-1.5 rounded-full text-xs font-bold transition text-slate-600 hover:text-slate-900 cursor-pointer';
+    bm.className = isAnn ? 'px-4 py-1.5 rounded-full text-xs font-bold transition text-slate-600 hover:text-slate-900 cursor-pointer' : 'px-4 py-1.5 rounded-full text-xs font-bold transition bg-yellow-400 text-slate-950 cursor-pointer';
+    ba.className = isAnn ? 'px-4 py-1.5 rounded-full text-xs font-bold transition bg-yellow-400 text-slate-950 cursor-pointer' : 'px-4 py-1.5 rounded-full text-xs font-bold transition text-slate-600 hover:text-slate-900 cursor-pointer';
   }
   updateAllPricingDisplay();
 }
@@ -882,7 +899,7 @@ function chooseQuincPack(planCode, basePrice, planLabel) {
       ${fld('Référence de transaction (reçue par SMS)', 'ref', 'text', 'required minlength="6" placeholder="Ex. TX123456789"')}
       <div class="flex justify-end gap-2 pt-2">
         <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl text-xs bg-slate-100 text-slate-600 cursor-pointer">Annuler</button>
-        <button class="px-4 py-2 rounded-xl text-xs bg-orange-500 hover:bg-orange-600 text-white font-bold cursor-pointer shadow-md shadow-orange-500/30">Activer mon abonnement</button>
+        <button class="px-4 py-2 rounded-xl text-xs bg-yellow-400 hover:bg-yellow-300 text-slate-950 font-bold shadow-md cursor-pointer shadow-md shadow-orange-500/30">Activer mon abonnement</button>
       </div>
     </form>
   </div>`);
@@ -1263,7 +1280,7 @@ function openBatUpdate(id) {
   const b = S.batiments.find(x => x.id === id); if (!b) return;
   openModal(`<h3 class="text-base font-bold text-slate-900">${esc(b.nom)}</h3><p class="text-xs text-slate-500">Indiquez l’avancement de chaque étape (0 à 100 %).</p><form data-f="batup" class="space-y-3"><input type="hidden" name="id" value="${b.id}">${fld('Niveau en cours de construction (sur ' + (b.niveaux || '?') + ' niveaux)', 'niveauActuel', 'number', `min="0" value="${b.niveauActuel == null ? '' : b.niveauActuel}"`)}` +
     PHASES.map(p => `<label class="block text-xs font-semibold text-slate-600"><span class="flex justify-between"><span>${p[1]}</span><span class="text-orange-600">${b.ph[p[0]] || 0} %</span></span><input type="range" name="${p[0]}" min="0" max="100" step="5" value="${b.ph[p[0]] || 0}" oninput="this.previousElementSibling.lastElementChild.textContent=this.value+' %'" class="w-full accent-orange-500"></label>`).join('') +
-    '<div class="flex justify-end gap-2 pt-2"><button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl text-xs bg-slate-100 text-slate-600">Annuler</button><button class="px-4 py-2 rounded-xl text-xs bg-orange-500 text-white font-bold">Enregistrer</button></div></form>');
+    '<div class="flex justify-end gap-2 pt-2"><button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl text-xs bg-slate-100 text-slate-600">Annuler</button><button class="px-4 py-2 rounded-xl text-xs bg-yellow-400 text-slate-950 font-bold">Enregistrer</button></div></form>');
 }
 function delBat(id) { if (!confirm('Retirer ce bâtiment ?')) return; S.batiments = S.batiments.filter(b => b.id !== id); save(); renderAll(); }
 function renderChantierExpenses() { selChantier = $('selectedChantierFilter').value; renderChantiers(); }
@@ -1640,7 +1657,7 @@ function renderDemoBar() {
         </div>
       </div>
       <div class="flex flex-wrap items-center gap-2 shrink-0">
-        <button onclick="openCompanyModal()" class="bg-orange-500 hover:bg-orange-600 text-white font-bold px-3.5 py-2 rounded-xl text-xs transition shadow-sm cursor-pointer flex items-center gap-1.5">
+        <button onclick="openCompanyModal()" class="bg-yellow-400 hover:bg-yellow-300 text-slate-950 font-bold shadow-md px-3.5 py-2 rounded-xl text-xs transition shadow-sm cursor-pointer flex items-center gap-1.5">
           <i class="fa-solid fa-building"></i> <span>Créer mon espace réel (15j gratuits)</span>
         </button>
         <button onclick="clearDemo()" class="bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold px-3 py-2 rounded-xl text-xs transition cursor-pointer flex items-center gap-1">
@@ -2046,7 +2063,7 @@ function openSaleModal() {
     <button type="button" onclick="addSaleRow()" class="text-xs text-orange-700 font-bold">+ Ajouter un article</button>
     <div class="flex justify-between text-sm font-bold text-slate-900 border-t border-slate-200 pt-2"><span>Total</span><span id="saleTotal">0 FCFA</span></div>
     <div id="saleErr" class="text-xs text-rose-600"></div>
-    <div class="flex justify-end gap-2 pt-2"><button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl text-xs bg-slate-100 text-slate-600">Annuler</button><button class="px-4 py-2 rounded-xl text-xs bg-orange-500 text-white font-bold">Valider et éditer la facture</button></div></form>`);
+    <div class="flex justify-end gap-2 pt-2"><button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl text-xs bg-slate-100 text-slate-600">Annuler</button><button class="px-4 py-2 rounded-xl text-xs bg-yellow-400 text-slate-950 font-bold">Valider et éditer la facture</button></div></form>`);
   addSaleRow();
 }
 function addSaleRow() {
@@ -2130,7 +2147,7 @@ function openTeamModal() {
   if (curRole !== 'ceo') return toast('Réservé au patron : repassez au rôle CEO.');
   openModal(`<h3 class="text-base font-bold text-slate-900">Mon équipe</h3><p class="text-xs text-slate-600">Un admin par chantier, par quincaillerie et par camion (ou pour toute la flotte). Nom, e-mail et téléphone sont obligatoires.</p>
   <div class="space-y-2">${S.team.length ? S.team.map(m => `<div class="bg-slate-100 rounded-xl p-3 flex justify-between gap-2 items-start"><div class="text-xs"><div class="font-bold text-slate-900">${esc(m.nom)}</div><div class="text-slate-700">${esc(scopeLabel(m))}</div><div class="text-slate-500">${esc(m.email)} · ${esc(m.tel)}</div></div><button onclick="delMember('${m.id}')" class="text-[11px] text-slate-700 bg-slate-200 px-2 py-1 rounded-lg">Retirer</button></div>`).join('') : '<div class="text-xs text-slate-500 text-center p-4">Aucun membre pour l’instant.</div>'}</div>
-  <div class="flex justify-end gap-2"><button onclick="closeModal()" class="px-4 py-2 rounded-xl text-xs bg-slate-100 text-slate-600">Fermer</button><button onclick="openMemberModal()" class="px-4 py-2 rounded-xl text-xs bg-orange-500 text-white font-bold">Ajouter un membre</button></div>`);
+  <div class="flex justify-end gap-2"><button onclick="closeModal()" class="px-4 py-2 rounded-xl text-xs bg-slate-100 text-slate-600">Fermer</button><button onclick="openMemberModal()" class="px-4 py-2 rounded-xl text-xs bg-yellow-400 text-slate-950 font-bold">Ajouter un membre</button></div>`);
 }
 function openMemberModal() {
   const opts = S.chantiers.map(c => ['chantier:' + c.id, 'Admin du chantier : ' + c.nom.replace('Chantier ', '')]).concat(S.depots.map(d => ['depot:' + d.id, 'Admin de la quincaillerie : ' + d.nom]), [['truck:all', 'Admin de toute la flotte']], S.fleet.map(f => ['truck:' + f.id, 'Admin du camion : ' + f.name + ' (' + f.plate + ')']));
@@ -2193,7 +2210,7 @@ function renderContact() {
         <i class="fa-brands fa-whatsapp text-base"></i>
         <span>WhatsApp Direct</span>
       </a>
-      <button type="button" onclick="openContactModal()" class="bg-orange-500 hover:bg-orange-600 text-white font-bold px-4 py-3 rounded-xl text-xs flex items-center space-x-2 shadow-lg shadow-orange-500/30 transition cursor-pointer">
+      <button type="button" onclick="openContactModal()" class="bg-yellow-400 hover:bg-yellow-300 text-slate-950 font-bold shadow-md px-4 py-3 rounded-xl text-xs flex items-center space-x-2 shadow-lg shadow-orange-500/30 transition cursor-pointer">
         <i class="fa-solid fa-paper-plane"></i>
         <span>Formulaire</span>
       </button>
@@ -2344,4 +2361,122 @@ function openLegalModal(type) {
       </button>
     </div>
   `);
+}
+
+/* ---------- PORTAIL DE CONNEXION / INSCRIPTION DIRECTE (LANDING ➔ ERP) ---------- */
+function switchAuthTab(mode) {
+  const btnLogin = $('tab-btn-login');
+  const btnSignup = $('tab-btn-signup');
+  const formLogin = $('form-auth-login');
+  const formSignup = $('form-auth-signup');
+
+  if (mode === 'login') {
+    if (btnLogin) btnLogin.className = 'flex-1 py-2 rounded-xl text-xs font-bold transition bg-yellow-400 text-slate-950 cursor-pointer';
+    if (btnSignup) btnSignup.className = 'flex-1 py-2 rounded-xl text-xs font-bold transition text-slate-400 hover:text-white cursor-pointer';
+    if (formLogin) formLogin.classList.remove('hidden');
+    if (formSignup) formSignup.classList.add('hidden');
+  } else {
+    if (btnLogin) btnLogin.className = 'flex-1 py-2 rounded-xl text-xs font-bold transition text-slate-400 hover:text-white cursor-pointer';
+    if (btnSignup) btnSignup.className = 'flex-1 py-2 rounded-xl text-xs font-bold transition bg-yellow-400 text-slate-950 cursor-pointer';
+    if (formLogin) formLogin.classList.add('hidden');
+    if (formSignup) formSignup.classList.remove('hidden');
+  }
+}
+
+function handleDirectLogin(e) {
+  e.preventDefault();
+  const ident = ($('login-identifier')?.value || '').trim();
+  const role = $('login-role')?.value || 'ceo';
+  const pw = $('login-password')?.value || '';
+  const errBox = $('login-error');
+
+  if (!ident || !pw) {
+    if (errBox) errBox.textContent = 'Veuillez saisir votre e-mail ou téléphone ainsi que votre mot de passe.';
+    return;
+  }
+
+  // Vérification ou initialisation de session
+  if (!S.co) {
+    // Si aucune entreprise n'est enregistrée, créer un espace basé sur l'identifiant saisi
+    S.co = {
+      id: uid(),
+      nom: ident.includes('@') ? ident.split('@')[0].toUpperCase() + ' SARL' : 'Entreprise ' + ident,
+      resp: 'Direction ' + role.toUpperCase(),
+      email: ident.includes('@') ? ident.toLowerCase() : 'contact@margeup.sn',
+      tel: ident.replace(/\D/g, '').length >= 9 ? ident : '77 123 45 67',
+      ville: 'Dakar',
+      emailVerified: true,
+      since: day()
+    };
+    if (!S.trial && !S.sub) {
+      S.trial = { start: day(), end: addDays(day(), TRIAL_DAYS) };
+    }
+    save();
+  }
+
+  if (errBox) errBox.textContent = '';
+  enterRole(role);
+  updateHeaderMode('erp');
+  switchTab(role);
+  toast('Connexion réussie · Espace ' + (ROLE_LABEL[role] || role) + ' ouvert !');
+}
+
+function handleDirectSignup(e) {
+  e.preventDefault();
+  const nom = ($('signup-nom')?.value || '').trim();
+  const resp = ($('signup-resp')?.value || '').trim();
+  const ville = ($('signup-ville')?.value || '').trim();
+  const tel = ($('signup-tel')?.value || '').trim();
+  const email = ($('signup-email')?.value || '').trim().toLowerCase();
+  const pw = ($('signup-pw')?.value || '').trim();
+  const errBox = ($('signup-error'));
+
+  if (!nom || !resp || !/\S+@\S+\.\S+/.test(email) || tel.replace(/\D/g, '').length < 9) {
+    if (errBox) errBox.textContent = 'Nom d’entreprise, responsable, e-mail et téléphone valides (min. 9 chiffres) sont obligatoires.';
+    return;
+  }
+  if (pw.length < 4) {
+    if (errBox) errBox.textContent = 'Le mot de passe doit comporter au moins 4 caractères.';
+    return;
+  }
+
+  pendingCompanyData = {
+    id: (S.co && S.co.id) || uid(),
+    nom,
+    resp,
+    email,
+    tel,
+    ville,
+    since: day()
+  };
+
+  sendVerificationEmail(email);
+  openVerificationModal();
+  toast('Code de vérification généré : ' + verificationCode);
+}
+
+function updateHeaderMode(mode) {
+  const hLanding = $('header-landing');
+  const hErp = $('header-erp');
+  const navErp = $('nav-erp-tabs');
+  const subTitle = $('erp-co-subtitle');
+
+  if (mode === 'erp') {
+    if (hLanding) hLanding.classList.add('hidden');
+    if (hErp) hErp.classList.remove('hidden');
+    if (navErp) navErp.classList.remove('hidden');
+    if (subTitle && S.co) {
+      subTitle.textContent = S.co.nom + (S.co.ville ? ' · ' + S.co.ville : '');
+    }
+  } else {
+    if (hLanding) hLanding.classList.remove('hidden');
+    if (hErp) hErp.classList.add('hidden');
+    if (navErp) navErp.classList.add('hidden');
+  }
+}
+
+function logoutERP() {
+  updateHeaderMode('landing');
+  switchTab('accueil');
+  toast('Vous êtes déconnecté. Retour à la présentation publique.');
 }

@@ -35,17 +35,18 @@
   <!-- Supabase JS Client v2 (Officiel) -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <!-- Google Fonts Inter -->
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <!-- Couleurs MargeUp pour Tailwind -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
   <script>
     tailwind.config = {
       theme: {
         extend: {
-          fontFamily: { sans: ['Inter', 'sans-serif'] },
+          fontFamily: { sans: ['"Plus Jakarta Sans"', 'Inter', 'sans-serif'] },
           colors: {
             btp: {
-              orange: '#FF6B00',
-              yellow: '#F59E0B',
+              yellow: '#FACC15',
+              gold: '#EAB308',
               dark: '#0F172A',
               card: '#1E293B',
               border: '#334155',
@@ -61,65 +62,102 @@
 </head>
 <body class="h-full bg-slate-50 text-slate-900 flex flex-col overflow-x-hidden custom-scrollbar">
 
-  <!-- TOP HEADER & BRANDING -->
-  <header class="bg-white border-b border-slate-200 sticky top-0 z-40">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
-
-      <!-- LOGO & SLOGAN -->
-      <div class="flex items-center space-x-3 cursor-pointer" onclick="switchTab('accueil')">
-        <img src="images/logo.png" alt="Logo MargeUp" width="48" height="48" class="w-12 h-12 rounded-xl shadow-lg shadow-orange-500/30 ring-1 ring-orange-500/30">
-        <div>
-          <div class="flex items-center space-x-2">
-            <span class="text-2xl font-black tracking-tight text-slate-900">Marge<span class="text-orange-500">Up</span></span>
-            <span class="hidden sm:inline bg-orange-500/20 text-orange-700 text-xs px-2 py-0.5 rounded-full font-semibold border border-orange-500/30">Sénégal</span>
-          </div>
-          <p class="text-xs text-slate-600 hidden sm:block">Votre marge sous contrôle : BTP, flotte et quincaillerie</p>
+  <!-- TOP HEADER (DOUBLE MODE : LANDING PAGE / ERP APPLICATIF) -->
+  <header id="siteHeader" class="sticky top-0 z-50 bg-slate-900/95 backdrop-blur border-b border-slate-800 text-white" data-purpose="site-header">
+    
+    <!-- 1. EN-TÊTE MODE VISITEUR / LANDING PAGE -->
+    <div id="header-landing" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+      <!-- Brand Logo -->
+      <a class="flex items-center gap-3 group cursor-pointer" onclick="switchTab('accueil')">
+        <div class="w-10 h-10 rounded-lg bg-yellow-400 flex items-center justify-center font-extrabold text-slate-950 text-xl shadow-lg shadow-yellow-400/20 group-hover:scale-105 transition-transform">
+          M
         </div>
-      </div>
-
-      <!-- ENTREPRISE, RÔLE ET CONSOLE ADMIN -->
-      <div class="flex items-center space-x-3">
-        <div id="syncIndicator" class="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200"></div>
-        <button id="coBtn" onclick="openCompanyModal()" class="bg-slate-50 border border-slate-200 hover:border-orange-500 text-slate-700 text-xs font-semibold rounded-xl px-3 py-2.5 max-w-[150px] sm:max-w-[220px] truncate" title="Mon entreprise"></button>
-        <button id="teamBtn" onclick="openTeamModal()" class="ceo-only bg-slate-50 border border-slate-200 hover:border-orange-500 text-slate-700 text-xs font-semibold rounded-xl px-3 py-2.5" title="Mon équipe"><i class="fa-solid fa-users text-orange-600"></i> <span class="hidden sm:inline">Équipe</span></button>
-        <div class="bg-slate-50 border border-slate-200 rounded-xl p-1.5 flex items-center space-x-2">
-          <span class="text-xs text-slate-700 pl-2 hidden md:inline">Accès Rôle:</span>
-          <select id="roleSelector" onchange="requestRole(this.value)" class="bg-slate-100 text-slate-900 text-xs font-semibold rounded-lg px-3 py-1.5 border border-slate-300 focus:outline-none focus:border-orange-500 cursor-pointer">
-            <option value="ceo">Direction (CEO)</option>
-            <option value="magasinier">Pass Magasinier (Quincaillerie)</option>
-            <option value="transport">Pass Transport (Flotte & Pannes)</option>
-          </select>
+        <div class="flex flex-col">
+          <span class="text-xl font-extrabold tracking-tight text-white">Marge<span class="text-yellow-400">Up</span></span>
+          <span class="text-[10px] uppercase tracking-widest text-slate-400 font-semibold">ERP BTP &amp; Transport · Sénégal</span>
         </div>
-      </div>
+      </a>
 
+      <!-- Navigation Links -->
+      <nav class="hidden lg:flex items-center gap-7 text-sm font-medium text-slate-300">
+        <a class="hover:text-yellow-400 transition-colors" href="#fonctionnalites">Fonctionnalités</a>
+        <a class="hover:text-yellow-400 transition-colors" href="#probleme">Défis du terrain</a>
+        <a class="hover:text-yellow-400 transition-colors" href="#comment-ca-marche">Comment ça marche</a>
+        <a class="hover:text-yellow-400 transition-colors" href="#temoignages">Témoignages</a>
+        <a class="hover:text-yellow-400 transition-colors" href="#tarification">Tarification</a>
+      </nav>
+
+      <!-- Action Buttons -->
+      <div class="flex items-center gap-3">
+        <a href="#connexion" onclick="switchAuthTab('login')" class="text-slate-200 hover:text-yellow-400 text-xs sm:text-sm font-bold px-3 py-2 transition-colors cursor-pointer flex items-center gap-1.5">
+          <i class="fa-solid fa-arrow-right-to-bracket text-yellow-400"></i>
+          <span>Connexion</span>
+        </a>
+        <a href="#connexion" onclick="switchAuthTab('signup')" class="inline-flex items-center justify-center px-4 sm:px-5 py-2.5 rounded-xl bg-yellow-400 text-slate-950 font-bold text-xs sm:text-sm shadow-md hover:bg-yellow-300 transition-all hover:shadow-yellow-400/20 cursor-pointer">
+          Essai 15 jours gratuit
+        </a>
+      </div>
     </div>
 
-    <!-- MAIN NAVIGATION TABS -->
-    <nav class="bg-white/90 backdrop-blur border-t border-slate-200 px-4 sm:px-8 overflow-x-auto custom-scrollbar">
-      <div class="max-w-7xl mx-auto flex space-x-1 py-2">
-        <button id="tab-accueil" onclick="switchTab('accueil')" class="nav-tab text-xs font-semibold px-4 py-2.5 rounded-lg flex items-center space-x-2 whitespace-nowrap bg-orange-500 text-white">
-          <i class="fa-solid fa-house"></i>
-          <span>Accueil</span>
+    <!-- 2. EN-TÊTE MODE ERP APPLICATIF (ACTIF UNE FOIS CONNECTÉ) -->
+    <div id="header-erp" class="hidden max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+      <div class="flex items-center space-x-3 cursor-pointer" onclick="switchTab('ceo')">
+        <div class="w-10 h-10 rounded-lg bg-yellow-400 flex items-center justify-center font-extrabold text-slate-950 text-xl shadow-lg shadow-yellow-400/20">
+          M
+        </div>
+        <div>
+          <div class="flex items-center space-x-2">
+            <span class="text-xl font-extrabold tracking-tight text-white">Marge<span class="text-yellow-400">Up</span></span>
+            <span class="bg-yellow-400/20 text-yellow-300 text-[10px] px-2 py-0.5 rounded-full font-bold border border-yellow-400/30">ERP Entreprise</span>
+          </div>
+          <p id="erp-co-subtitle" class="text-xs text-slate-400 truncate max-w-[200px] sm:max-w-xs">Espace de travail connecté</p>
+        </div>
+      </div>
+
+      <!-- Contrôles ERP : Sync, Entreprise, Rôle & Déconnexion -->
+      <div class="flex items-center space-x-2 sm:space-x-3">
+        <div id="syncIndicator" class="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-slate-800 text-slate-300 border border-slate-700"></div>
+        <button id="coBtn" onclick="openCompanyModal()" class="bg-slate-800 border border-slate-700 hover:border-yellow-400 text-slate-200 text-xs font-semibold rounded-xl px-3 py-2 max-w-[140px] sm:max-w-[200px] truncate" title="Mon entreprise"></button>
+        <button id="teamBtn" onclick="openTeamModal()" class="ceo-only bg-slate-800 border border-slate-700 hover:border-yellow-400 text-slate-200 text-xs font-semibold rounded-xl px-3 py-2" title="Gérer l'équipe"><i class="fa-solid fa-users text-yellow-400"></i> <span class="hidden sm:inline">Équipe</span></button>
+        
+        <div class="bg-slate-800 border border-slate-700 rounded-xl p-1 flex items-center space-x-1.5">
+          <span class="text-xs text-slate-400 pl-1.5 hidden lg:inline">Rôle :</span>
+          <select id="roleSelector" onchange="requestRole(this.value)" class="bg-slate-900 text-yellow-400 text-xs font-bold rounded-lg px-2.5 py-1.5 border border-slate-700 focus:outline-none focus:border-yellow-400 cursor-pointer">
+            <option value="ceo">Direction (CEO)</option>
+            <option value="magasinier">Magasinier (Quincaillerie)</option>
+            <option value="transport">Transport (Flotte &amp; Pannes)</option>
+          </select>
+        </div>
+
+        <button onclick="logoutERP()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 px-3 py-2 rounded-xl text-xs font-semibold transition cursor-pointer flex items-center gap-1.5" title="Déconnexion / Retour au site public">
+          <i class="fa-solid fa-power-off text-rose-400"></i>
+          <span class="hidden sm:inline">Quitter</span>
         </button>
-        <button id="tab-tarifs" onclick="switchTab('tarifs')" class="nav-tab ceo-only text-xs font-semibold px-4 py-2.5 rounded-lg flex items-center space-x-2 whitespace-nowrap text-slate-500 hover:bg-slate-100 hover:text-slate-900">
-          <i class="fa-solid fa-calculator text-emerald-600"></i>
-          <span>Calculateur de Tarifs</span>
-        </button>
-        <button id="tab-ceo" onclick="switchTab('ceo')" class="nav-tab role-restricted role-ceo text-xs font-semibold px-4 py-2.5 rounded-lg flex items-center space-x-2 whitespace-nowrap text-slate-500 hover:bg-slate-100 hover:text-slate-900">
-          <i class="fa-solid fa-chart-line text-blue-600"></i>
+      </div>
+    </div>
+
+    <!-- MAIN NAVIGATION TABS (ERP APPLICATIF) -->
+    <nav id="nav-erp-tabs" class="hidden bg-slate-950/90 backdrop-blur border-t border-slate-800 px-4 sm:px-8 overflow-x-auto custom-scrollbar">
+      <div class="max-w-7xl mx-auto flex space-x-2 py-2">
+        <button id="tab-ceo" onclick="switchTab('ceo')" class="nav-tab role-restricted role-ceo text-xs font-semibold px-4 py-2.5 rounded-lg flex items-center space-x-2 whitespace-nowrap bg-yellow-400 text-slate-950 shadow-sm cursor-pointer">
+          <i class="fa-solid fa-chart-line"></i>
           <span>Tableau de Bord CEO</span>
         </button>
-        <button id="tab-magasinier" onclick="switchTab('magasinier')" class="nav-tab role-restricted role-magasinier text-xs font-semibold px-4 py-2.5 rounded-lg flex items-center space-x-2 whitespace-nowrap text-slate-500 hover:bg-slate-100 hover:text-slate-900">
-          <i class="fa-solid fa-boxes-stacked text-purple-600"></i>
-          <span>Magasinier & Quincaillerie</span>
+        <button id="tab-magasinier" onclick="switchTab('magasinier')" class="nav-tab role-restricted role-magasinier text-xs font-semibold px-4 py-2.5 rounded-lg flex items-center space-x-2 whitespace-nowrap text-slate-400 hover:bg-slate-800 hover:text-white cursor-pointer">
+          <i class="fa-solid fa-boxes-stacked text-purple-400"></i>
+          <span>Quincaillerie &amp; Magasin</span>
         </button>
-        <button id="tab-transport" onclick="switchTab('transport')" class="nav-tab role-restricted role-transport text-xs font-semibold px-4 py-2.5 rounded-lg flex items-center space-x-2 whitespace-nowrap text-slate-500 hover:bg-slate-100 hover:text-slate-900">
-          <i class="fa-solid fa-truck-monster text-amber-600"></i>
-          <span>Flotte & Registre Pannes</span>
+        <button id="tab-transport" onclick="switchTab('transport')" class="nav-tab role-restricted role-transport text-xs font-semibold px-4 py-2.5 rounded-lg flex items-center space-x-2 whitespace-nowrap text-slate-400 hover:bg-slate-800 hover:text-white cursor-pointer">
+          <i class="fa-solid fa-truck-monster text-amber-400"></i>
+          <span>Flotte &amp; Registre Pannes</span>
         </button>
-        <button id="tab-partenaires" onclick="switchTab('partenaires')" class="nav-tab text-xs font-semibold px-4 py-2.5 rounded-lg flex items-center space-x-2 whitespace-nowrap text-slate-500 hover:bg-slate-100 hover:text-slate-900">
-          <i class="fa-solid fa-handshake text-cyan-600"></i>
-          <span>Pour qui ?</span>
+        <button id="tab-tarifs" onclick="switchTab('tarifs')" class="nav-tab ceo-only text-xs font-semibold px-4 py-2.5 rounded-lg flex items-center space-x-2 whitespace-nowrap text-slate-400 hover:bg-slate-800 hover:text-white cursor-pointer">
+          <i class="fa-solid fa-calculator text-emerald-400"></i>
+          <span>Abonnement &amp; Tarifs</span>
+        </button>
+        <button onclick="switchTab('accueil')" class="text-xs font-semibold px-3 py-2.5 rounded-lg flex items-center space-x-1.5 whitespace-nowrap text-slate-400 hover:text-yellow-400 ml-auto cursor-pointer">
+          <i class="fa-solid fa-globe"></i>
+          <span>Voir la Présentation</span>
         </button>
       </div>
     </nav>
@@ -130,298 +168,302 @@
   <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
     <div id="demoBar"></div>
 
-    <!-- ==================== SECTION 1: ACCUEIL ==================== -->
-    <section id="view-accueil" class="space-y-8">
+    <!-- ==================== SECTION 1: LANDING PAGE & TARIFS ==================== -->
+    <section id="view-accueil" class="space-y-16 pb-12">
 
-      <!-- HERO BANNER -->
-      <div class="relative rounded-3xl bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 border border-slate-800 p-8 sm:p-12 overflow-hidden shadow-2xl">
-        <img src="images/immeubles.jpg" alt="" class="absolute inset-0 w-full h-full object-cover opacity-40 pointer-events-none">
-        <div class="absolute inset-0 bg-gradient-to-r from-slate-950 via-slate-950/80 to-slate-950/20 pointer-events-none"></div>
-        <div class="absolute -right-20 -bottom-20 w-96 h-96 bg-orange-500/10 rounded-full blur-3xl pointer-events-none"></div>
-        <div class="max-w-3xl space-y-6 relative z-10">
-          <div class="inline-flex items-center space-x-2 bg-orange-500/10 border border-orange-500/30 text-orange-400 px-3 py-1 rounded-full text-xs font-bold">
-            <img src="images/logo-256.png" alt="" width="20" height="20" class="w-5 h-5 rounded-md">
-            <span>ERP sur mesure pour le BTP, le génie civil et le transport au Sénégal</span>
+      <!-- 1. HERO SECTION INDUSTRIEL SOMBRE -->
+      <div class="relative -mx-4 sm:-mx-6 lg:-mx-8 -mt-4 sm:-mt-6 lg:-mt-8 pt-16 pb-24 overflow-hidden industrial-gradient text-white shadow-2xl">
+        <div class="absolute inset-0 hero-glow pointer-events-none"></div>
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+          <div class="grid lg:grid-cols-12 gap-12 items-center">
+            
+            <!-- Hero Content -->
+            <div class="lg:col-span-7 space-y-6 text-center lg:text-left">
+              <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-slate-800/90 border border-slate-700 text-yellow-400 text-xs font-semibold tracking-wide uppercase shadow-sm">
+                <span class="w-2 h-2 rounded-full bg-yellow-400 animate-pulse"></span>
+                <span>Conçu pour le Sénégal &amp; l'Afrique de l'Ouest</span>
+              </div>
+              <h1 class="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight leading-[1.1]">
+                Reprenez le contrôle de vos <span class="text-yellow-400">marges</span> sur les chantiers et la flotte
+              </h1>
+              <p class="text-base sm:text-lg text-slate-300 max-w-2xl mx-auto lg:mx-0 font-normal leading-relaxed">
+                L’ERP tout-en-un taillé pour les entrepreneurs du BTP, du génie civil, du transport et des quincailleries au Sénégal. Finies les pertes sur les carburants et les stocks de matériaux.
+              </p>
+              <div class="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4 pt-2">
+                <a href="#connexion" onclick="switchAuthTab('signup')" class="w-full sm:w-auto px-8 py-4 rounded-xl bg-yellow-400 text-slate-950 font-extrabold text-sm sm:text-base shadow-lg hover:bg-yellow-300 transition-all text-center cursor-pointer shadow-yellow-400/20">
+                  <i class="fa-solid fa-gift mr-1.5"></i> Démarrer mes 15 jours gratuits
+                </a>
+                <a href="#fonctionnalites" class="w-full sm:w-auto px-8 py-4 rounded-xl bg-slate-800 border border-slate-700 text-white font-semibold text-sm sm:text-base hover:bg-slate-700 transition-all text-center cursor-pointer">
+                  Voir les fonctionnalités
+                </a>
+              </div>
+              
+              <!-- Trust badges / Metrics -->
+              <div class="pt-6 grid grid-cols-3 gap-6 border-t border-slate-800 text-left">
+                <div>
+                  <p class="text-2xl sm:text-3xl font-extrabold text-yellow-400">+25%</p>
+                  <p class="text-xs text-slate-400 font-medium">Marges sécurisées</p>
+                </div>
+                <div>
+                  <p class="text-2xl sm:text-3xl font-extrabold text-white">100%</p>
+                  <p class="text-xs text-slate-400 font-medium">Traçabilité Carburant</p>
+                </div>
+                <div>
+                  <p class="text-2xl sm:text-3xl font-extrabold text-yellow-400">24/7</p>
+                  <p class="text-xs text-slate-400 font-medium">Suivi opérationnel</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Hero Mockup/Image -->
+            <div class="lg:col-span-5">
+              <div class="relative mx-auto max-w-md lg:max-w-none">
+                <div class="absolute -inset-1 bg-gradient-to-r from-yellow-500 to-amber-600 rounded-3xl blur-xl opacity-30"></div>
+                <div class="relative rounded-2xl bg-slate-900 border border-slate-700 shadow-2xl overflow-hidden">
+                  <!-- Header bar -->
+                  <div class="bg-slate-950 px-4 py-3 border-b border-slate-800 flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                      <div class="w-3 h-3 rounded-full bg-rose-500"></div>
+                      <div class="w-3 h-3 rounded-full bg-yellow-500"></div>
+                      <div class="w-3 h-3 rounded-full bg-emerald-500"></div>
+                    </div>
+                    <span class="text-xs text-slate-400 font-mono">margeup.com · Tableau de bord CEO</span>
+                  </div>
+                  <!-- Mockup Content -->
+                  <div class="p-5 space-y-4">
+                    <div class="grid grid-cols-2 gap-3">
+                      <div class="bg-slate-800/80 p-3.5 rounded-xl border border-slate-700/60">
+                        <p class="text-[11px] text-slate-400 uppercase font-bold">Économie Carburant</p>
+                        <p class="text-lg font-black text-yellow-400 mt-1">+1 450 000 FCFA</p>
+                        <p class="text-[10px] text-emerald-400 mt-0.5"><i class="fa-solid fa-arrow-trend-down"></i> Anti-siphonnage</p>
+                      </div>
+                      <div class="bg-slate-800/80 p-3.5 rounded-xl border border-slate-700/60">
+                        <p class="text-[11px] text-slate-400 uppercase font-bold">Chantiers Actifs</p>
+                        <p class="text-lg font-black text-white mt-1">4 en cours</p>
+                        <p class="text-[10px] text-yellow-400 mt-0.5"><i class="fa-solid fa-chart-pie"></i> Budgets sous contrôle</p>
+                      </div>
+                    </div>
+                    <div class="bg-slate-800/50 p-3.5 rounded-xl border border-slate-700/50 space-y-2">
+                      <div class="flex justify-between items-center text-xs">
+                        <span class="text-slate-300 font-medium">Stock Ciment Dangote (Dépôt)</span>
+                        <span class="font-bold text-yellow-400">24 t (480 sacs)</span>
+                      </div>
+                      <div class="w-full bg-slate-700 rounded-full h-2 overflow-hidden">
+                        <div class="bg-yellow-400 h-2 rounded-full" style="width: 75%"></div>
+                      </div>
+                      <div class="flex justify-between items-center text-[10px] text-slate-400">
+                        <span>Seuil d'alerte : 5 t</span>
+                        <span class="text-emerald-400 font-bold">Stock optimal</span>
+                      </div>
+                    </div>
+                    <a href="#connexion" onclick="switchAuthTab('login')" class="w-full bg-yellow-400 hover:bg-yellow-300 text-slate-950 font-bold py-2.5 rounded-xl text-xs transition cursor-pointer flex items-center justify-center gap-1.5 shadow-md">
+                      <i class="fa-solid fa-lock-open text-xs"></i>
+                      <span>Accéder à l'ERP complet</span>
+                    </a>
+                  </div>
+                </div>
+              </div>
+            </div>
+
           </div>
-          <h1 class="text-3xl sm:text-5xl font-black text-white leading-tight">
-            Faites monter votre marge : quincailleries, dépôts et flottes de transport sous contrôle.
-          </h1>
-          <p class="text-slate-300 text-sm sm:text-base leading-relaxed">
-            MargeUp vous montre où part votre argent : carburant, stock et ventes en magasin. Vos équipes saisissent sur le terrain (au comptoir ou au volant), vous pilotez votre marge en toute confiance avec synchronisation multi-appareils.
-          </p>
-          <p class="text-emerald-400 text-sm font-semibold"><i class="fa-solid fa-gift"></i> 15 jours d’essai gratuit, sans paiement ni carte.</p>
-          <div class="flex flex-wrap gap-4 pt-2">
-            <button onclick="switchTab('tarifs')" class="ceo-only bg-gradient-to-r from-orange-500 to-amber-500 text-white font-bold px-6 py-3.5 rounded-xl shadow-lg shadow-orange-500/30 hover:scale-105 transition flex items-center space-x-2">
-              <i class="fa-solid fa-calculator"></i>
-              <span>Calculer mon Tarif personnalisé</span>
-            </button>
-            <button onclick="startDemoMode()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-semibold px-6 py-3.5 rounded-xl transition flex items-center space-x-2 cursor-pointer">
-              <i class="fa-solid fa-play"></i>
-              <span>Tester la Démo Interactive</span>
-            </button>
+        </div>
+      </div>
+
+      <!-- 2. SECTION PROBLÈMES DU TERRAIN (#probleme) -->
+      <section id="probleme" class="space-y-8 pt-4">
+        <div class="text-center max-w-3xl mx-auto space-y-3">
+          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 text-amber-600 text-xs font-bold uppercase tracking-wider border border-amber-500/20">
+            Les défis du terrain
+          </div>
+          <h2 class="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
+            Pourquoi les entreprises BTP et transport perdent-elles de l'argent chaque mois ?
+          </h2>
+          <p class="text-sm text-slate-600">Sur un chantier comme dans une flotte de camions, l'argent s'évapore en silence sans outil adapté.</p>
+        </div>
+
+        <div class="grid md:grid-cols-3 gap-6">
+          <div class="bg-white p-7 rounded-2xl border border-slate-200 hover:border-yellow-400 transition-all shadow-sm space-y-4 group">
+            <div class="w-12 h-12 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center font-black text-xl group-hover:bg-yellow-400 group-hover:text-slate-950 transition-colors">
+              01
+            </div>
+            <h3 class="text-lg font-bold text-slate-900">Siphonnages de carburant</h3>
+            <p class="text-xs text-slate-600 leading-relaxed">
+              Consommations non tracées, pleins fictifs et carburant revendu sur les parcs d'engins sans que personne ne puisse prouver les écarts.
+            </p>
+            <div class="text-[11px] font-bold text-emerald-700 bg-emerald-50 p-2.5 rounded-xl border border-emerald-200">
+              <i class="fa-solid fa-check"></i> <b>Avec MargeUp :</b> chaque litre est imputé au camion, avec alerte conso aux 100 km.
+            </div>
+          </div>
+
+          <div class="bg-white p-7 rounded-2xl border border-slate-200 hover:border-yellow-400 transition-all shadow-sm space-y-4 group">
+            <div class="w-12 h-12 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center font-black text-xl group-hover:bg-yellow-400 group-hover:text-slate-950 transition-colors">
+              02
+            </div>
+            <h3 class="text-lg font-bold text-slate-900">Pertes de stock inexpliquées</h3>
+            <p class="text-xs text-slate-600 leading-relaxed">
+              Ciment, fer à béton et tuyaux qui disparaissent des dépôts sans registre d'entrées/sorties fiable ni conversion sacs/tonnes.
+            </p>
+            <div class="text-[11px] font-bold text-emerald-700 bg-emerald-50 p-2.5 rounded-xl border border-emerald-200">
+              <i class="fa-solid fa-check"></i> <b>Avec MargeUp :</b> double guichet B2B/B2C, traçabilité des bons de sortie et stock temps réel.
+            </div>
+          </div>
+
+          <div class="bg-white p-7 rounded-2xl border border-slate-200 hover:border-yellow-400 transition-all shadow-sm space-y-4 group">
+            <div class="w-12 h-12 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center font-black text-xl group-hover:bg-yellow-400 group-hover:text-slate-950 transition-colors">
+              03
+            </div>
+            <h3 class="text-lg font-bold text-slate-900">Suivi chaotique des factures</h3>
+            <p class="text-xs text-slate-600 leading-relaxed">
+              Ventes au comptoir oubliées, tickets de caisse égarés et incapacité de connaître la vraie marge nette de chaque mois.
+            </p>
+            <div class="text-[11px] font-bold text-emerald-700 bg-emerald-50 p-2.5 rounded-xl border border-emerald-200">
+              <i class="fa-solid fa-check"></i> <b>Avec MargeUp :</b> facturation PDF instantanée, partage WhatsApp et tableau de bord CEO.
+            </div>
           </div>
         </div>
-      </div>
+      </section>
 
-      <!-- LE PROBLÈME ET LA SOLUTION -->
-      <div class="space-y-5">
-        <div class="max-w-3xl">
-          <h2 class="text-2xl font-black text-slate-900">Savez-vous vraiment où part votre marge ?</h2>
-          <p class="text-sm text-slate-600 mt-1">Sur un chantier comme dans une flotte, l’argent se perd en silence. MargeUp vous montre où, jour après jour.</p>
-        </div>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div class="bg-white border border-slate-200 rounded-2xl p-5 space-y-3"><div class="flex items-center gap-3"><span class="w-10 h-10 rounded-xl bg-orange-500/15 text-orange-600 flex items-center justify-center"><i class="fa-solid fa-gas-pump"></i></span><h3 class="text-base font-bold text-slate-900">Le carburant</h3></div><p class="text-xs text-rose-700"><b>Le problème :</b> des pleins que personne ne contrôle.</p><p class="text-xs text-emerald-700"><b>Avec MargeUp :</b> chaque plein est enregistré avec ses litres, son montant et son camion. Les statistiques des chauffeurs montrent qui consomme le moins.</p></div>
-          <div class="bg-white border border-slate-200 rounded-2xl p-5 space-y-3"><div class="flex items-center gap-3"><span class="w-10 h-10 rounded-xl bg-orange-500/15 text-orange-600 flex items-center justify-center"><i class="fa-solid fa-boxes-stacked"></i></span><h3 class="text-base font-bold text-slate-900">Le stock</h3></div><p class="text-xs text-rose-700"><b>Le problème :</b> du ciment et du fer qui disparaissent.</p><p class="text-xs text-emerald-700"><b>Avec MargeUp :</b> chaque arrivage, vente et sortie vers un chantier est tracé. Le stock est juste tous les jours, sans inventaire de fin d’année.</p></div>
-          <div class="bg-white border border-slate-200 rounded-2xl p-5 space-y-3"><div class="flex items-center gap-3"><span class="w-10 h-10 rounded-xl bg-orange-500/15 text-orange-600 flex items-center justify-center"><i class="fa-solid fa-cash-register"></i></span><h3 class="text-base font-bold text-slate-900">La caisse et les factures</h3></div><p class="text-xs text-rose-700"><b>Le problème :</b> des ventes au comptoir non enregistrées et des tickets égarés.</p><p class="text-xs text-emerald-700"><b>Avec MargeUp :</b> chaque vente au détail ou en gros génère une facture PDF instantanée, partageable par WhatsApp et déduite du stock.</p></div>
-          <div class="bg-white border border-slate-200 rounded-2xl p-5 space-y-3"><div class="flex items-center gap-3"><span class="w-10 h-10 rounded-xl bg-orange-500/15 text-orange-600 flex items-center justify-center"><i class="fa-solid fa-receipt"></i></span><h3 class="text-base font-bold text-slate-900">Les dépenses</h3></div><p class="text-xs text-rose-700"><b>Le problème :</b> des achats qui ne sont rattachés à aucun chantier.</p><p class="text-xs text-emerald-700"><b>Avec MargeUp :</b> chaque dépense, sortie de stock ou plein peut être imputé au chantier concerné, pour connaître le vrai coût.</p></div>
-        </div>
-      </div>
-
-      <!-- COMMENT ÇA MARCHE -->
-      <div class="space-y-5">
-        <h2 class="text-2xl font-black text-slate-900">Comment ça marche</h2>
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div class="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-2"><div class="w-8 h-8 rounded-full bg-orange-500 text-white font-black flex items-center justify-center text-sm">1</div><h3 class="text-sm font-bold text-slate-900">Créez votre espace</h3><p class="text-xs text-slate-600 leading-relaxed">Donnez le nom de votre entreprise. Vous profitez de 15 jours d’essai gratuit, sans engagement.</p></div>
-          <div class="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-2"><div class="w-8 h-8 rounded-full bg-orange-500 text-white font-black flex items-center justify-center text-sm">2</div><h3 class="text-sm font-bold text-slate-900">Ajoutez votre équipe</h3><p class="text-xs text-slate-600 leading-relaxed">Un admin par chantier, par quincaillerie et par camion, avec son nom, son e-mail et son téléphone.</p></div>
-          <div class="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-2"><div class="w-8 h-8 rounded-full bg-orange-500 text-white font-black flex items-center justify-center text-sm">3</div><h3 class="text-sm font-bold text-slate-900">L’équipe saisit sur le terrain</h3><p class="text-xs text-slate-600 leading-relaxed">Ventes au comptoir, arrivages de stock, pleins de carburant, voyages et pannes sont saisis directement à la source.</p></div>
-          <div class="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-2"><div class="w-8 h-8 rounded-full bg-orange-500 text-white font-black flex items-center justify-center text-sm">4</div><h3 class="text-sm font-bold text-slate-900">Vous pilotez la marge</h3><p class="text-xs text-slate-600 leading-relaxed">Tableau de bord CEO épuré, factures PDF, classement des chauffeurs et alertes de stock/pannes en un coup d’œil.</p></div>
-        </div>
-      </div>
-
-      <!-- POURQUOI MARGEUP -->
-      <div class="bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 space-y-6">
-        <div class="border-b border-slate-300 pb-4">
-          <h2 class="text-xl font-bold text-slate-900 flex items-center space-x-2"><i class="fa-solid fa-circle-check text-orange-500"></i><span>Pourquoi MargeUp ?</span></h2>
-          <p class="text-xs text-slate-600 mt-1">Conçu pour la réalité de Dakar, Diamniadio, Thiès et des régions du Sénégal.</p>
-        </div>
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div class="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-3"><div class="w-10 h-10 rounded-lg bg-orange-500/10 text-orange-600 flex items-center justify-center"><i class="fa-solid fa-mobile-screen text-lg"></i></div><h3 class="text-base font-bold text-slate-900">Aucune installation</h3><p class="text-xs text-slate-600 leading-relaxed">Vos équipes ouvrent MargeUp dans le navigateur de leur téléphone, de leur tablette ou de leur ordinateur.</p></div>
-          <div class="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-3"><div class="w-10 h-10 rounded-lg bg-emerald-500/10 text-emerald-600 flex items-center justify-center"><i class="fa-solid fa-clipboard-list text-lg"></i></div><h3 class="text-base font-bold text-slate-900">Traçabilité complète</h3><p class="text-xs text-slate-600 leading-relaxed">Chaque entrée, sortie, plein, vente et dépense est enregistré avec sa date et son auteur.</p></div>
-          <div class="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-3"><div class="w-10 h-10 rounded-lg bg-blue-500/10 text-blue-600 flex items-center justify-center"><i class="fa-solid fa-user-shield text-lg"></i></div><h3 class="text-base font-bold text-slate-900">Chacun voit son métier</h3><p class="text-xs text-slate-600 leading-relaxed">Magasinier, transport et chef de chantier accèdent uniquement à leur périmètre, sans voir la marge de l’entreprise.</p></div>
-        </div>
-      </div>
-
-      <!-- ECOSYSTÈME DES MODULES ACTIFS -->
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
-        <!-- MODULE 1: QUINCAILLERIE -->
-        <div class="bg-white border border-slate-200 rounded-2xl p-6 space-y-4 hover:border-purple-500/50 transition">
-          <img src="images/tuyaux.jpg" alt="Rayons de tuyaux et profilés d’une quincaillerie" loading="lazy" class="w-full h-40 object-cover rounded-xl">
-          <div class="flex items-center justify-between">
-            <span class="w-10 h-10 rounded-xl bg-purple-500/20 text-purple-600 flex items-center justify-center font-bold text-lg">
-              <i class="fa-solid fa-store"></i>
-            </span>
-            <span class="text-xs bg-slate-100 text-purple-700 px-2.5 py-1 rounded-full border border-purple-500/30">Pass Magasinier</span>
+      <!-- 3. SECTION FONCTIONNALITÉS COMPLÈTES (#fonctionnalites) -->
+      <section id="fonctionnalites" class="space-y-8 pt-6">
+        <div class="text-center max-w-3xl mx-auto space-y-3">
+          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-900 text-yellow-400 text-xs font-bold uppercase tracking-wider">
+            Solution Complète
           </div>
-          <h3 class="text-lg font-bold text-slate-900">Quincaillerie & Dépôt Stocks</h3>
-          <p class="text-xs text-slate-500 leading-relaxed">
-            Gestion du fer à béton, ciment, tuyaux PEHD, sable. Ventes au comptoir, double guichet B2C/B2B et impression thermique des reçus et factures.
-          </p>
-          <button onclick="switchRoleAndTab('magasinier')" class="w-full bg-slate-100 hover:bg-slate-200 text-purple-700 font-semibold text-xs py-2.5 rounded-lg border border-slate-300 flex items-center justify-center space-x-2">
-            <span>Accéder au Magasin</span>
-            <i class="fa-solid fa-arrow-right"></i>
-          </button>
+          <h2 class="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
+            Tout pour piloter quincailleries, camions et chantiers d'une main de maître
+          </h2>
+          <p class="text-sm text-slate-600">Une suite d'outils interconnectés conçus pour la réalité du terrain au Sénégal.</p>
         </div>
 
-        <!-- MODULE 2: FLOTTE ET TRANSPORT -->
-        <div class="bg-white border border-slate-200 rounded-2xl p-6 space-y-4 hover:border-amber-500/50 transition">
-          <img src="images/engins.jpg" alt="Pelleteuse, chargeuse et camion benne sur un chantier" loading="lazy" class="w-full h-40 object-cover rounded-xl">
-          <div class="flex items-center justify-between">
-            <span class="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-600 flex items-center justify-center font-bold text-lg">
+        <div class="grid md:grid-cols-2 gap-6">
+          <div class="bg-white p-7 rounded-2xl border border-slate-200 shadow-sm flex items-start gap-5 hover:border-yellow-400 transition">
+            <div class="w-12 h-12 rounded-xl bg-slate-900 text-yellow-400 flex items-center justify-center text-xl shrink-0 shadow-md">
+              <i class="fa-solid fa-boxes-stacked"></i>
+            </div>
+            <div class="space-y-2">
+              <h3 class="text-lg font-bold text-slate-900">Gestion intelligente des stocks</h3>
+              <p class="text-xs text-slate-600 leading-relaxed">
+                Suivez en temps réel l'entrée et la sortie du ciment, fer à béton et agrégats. Conversion automatique exacte entre tonnes et sacs (1 tonne = 20 sacs de 50 kg).
+              </p>
+            </div>
+          </div>
+
+          <div class="bg-white p-7 rounded-2xl border border-slate-200 shadow-sm flex items-start gap-5 hover:border-yellow-400 transition">
+            <div class="w-12 h-12 rounded-xl bg-slate-900 text-yellow-400 flex items-center justify-center text-xl shrink-0 shadow-md">
+              <i class="fa-solid fa-gas-pump"></i>
+            </div>
+            <div class="space-y-2">
+              <h3 class="text-lg font-bold text-slate-900">Suivi rigoureux du carburant</h3>
+              <p class="text-xs text-slate-600 leading-relaxed">
+                Contrôlez chaque litre distribué à vos camions et toupies. Enregistrement des stations (Total, Shell, etc.), coûts en FCFA et alertes de surconsommation.
+              </p>
+            </div>
+          </div>
+
+          <div class="bg-white p-7 rounded-2xl border border-slate-200 shadow-sm flex items-start gap-5 hover:border-yellow-400 transition">
+            <div class="w-12 h-12 rounded-xl bg-slate-900 text-yellow-400 flex items-center justify-center text-xl shrink-0 shadow-md">
               <i class="fa-solid fa-truck-monster"></i>
-            </span>
-            <span class="text-xs bg-slate-100 text-amber-700 px-2.5 py-1 rounded-full border border-amber-500/30">Pass Transport</span>
+            </div>
+            <div class="space-y-2">
+              <h3 class="text-lg font-bold text-slate-900">Pilotage de flotte &amp; pannes mécaniques</h3>
+              <p class="text-xs text-slate-600 leading-relaxed">
+                Registre précis des réparations, classement automatique du meilleur chauffeur à primer et journal des rotations entre carrières et chantiers.
+              </p>
+            </div>
           </div>
-          <h3 class="text-lg font-bold text-slate-900">Flotte Camions & Registre Pannes</h3>
-          <p class="text-xs text-slate-500 leading-relaxed">
-            Suivi des camions Shacman, toupies et engins. Suivi des pleins de carburant, des chauffeurs et registre complet des pannes mécano-techniques.
-          </p>
-          <button onclick="switchRoleAndTab('transport')" class="w-full bg-slate-100 hover:bg-slate-200 text-amber-700 font-semibold text-xs py-2.5 rounded-lg border border-slate-300 flex items-center justify-center space-x-2">
-            <span>Voir la Flotte & Pannes</span>
-            <i class="fa-solid fa-arrow-right"></i>
-          </button>
+
+          <div class="bg-white p-7 rounded-2xl border border-slate-200 shadow-sm flex items-start gap-5 hover:border-yellow-400 transition">
+            <div class="w-12 h-12 rounded-xl bg-slate-900 text-yellow-400 flex items-center justify-center text-xl shrink-0 shadow-md">
+              <i class="fa-solid fa-receipt"></i>
+            </div>
+            <div class="space-y-2">
+              <h3 class="text-lg font-bold text-slate-900">Ventes, facturation &amp; WhatsApp</h3>
+              <p class="text-xs text-slate-600 leading-relaxed">
+                Guichet de vente au comptoir (détail et gros), génération instantanée de factures PDF numérotées et partage direct des reçus sur le WhatsApp du client.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 4. COMMENT ÇA MARCHE (#comment-ca-marche) -->
+      <section id="comment-ca-marche" class="space-y-8 pt-6">
+        <div class="text-center max-w-3xl mx-auto space-y-3">
+          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 text-amber-700 text-xs font-bold uppercase tracking-wider">
+            Processus simple
+          </div>
+          <h2 class="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
+            Comment MargeUp transforme votre gestion en 3 étapes
+          </h2>
         </div>
 
-      </div>
-      <!-- QUI VOIT QUOI -->
-      <div class="space-y-5">
-        <div class="max-w-3xl">
-          <h2 class="text-2xl font-black text-slate-900">Chacun voit son métier, la direction voit l’ensemble</h2>
-          <p class="text-sm text-slate-600 mt-1">Les accès sont cloisonnés pour protéger les chiffres et la confiance entre la direction et les équipes.</p>
-        </div>
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div class="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-2"><div class="flex items-center gap-2 text-orange-600"><i class="fa-solid fa-chart-line"></i><h3 class="text-sm font-bold text-slate-900">Direction (CEO)</h3></div><p class="text-xs text-slate-600 leading-relaxed">Vue d’ensemble : budgets, dépenses, flotte et ventes. Consultation seule : la direction ne modifie pas les saisies de l’équipe.</p></div>
-          <div class="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-2"><div class="flex items-center gap-2 text-orange-600"><i class="fa-solid fa-boxes-stacked"></i><h3 class="text-sm font-bold text-slate-900">Magasinier</h3></div><p class="text-xs text-slate-600 leading-relaxed">Stock, arrivages, ventes en détail et en gros, factures et sorties. Aucune vue sur la marge globale de l’entreprise.</p></div>
-          <div class="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-2"><div class="flex items-center gap-2 text-orange-600"><i class="fa-solid fa-truck-monster"></i><h3 class="text-sm font-bold text-slate-900">Responsable transport</h3></div><p class="text-xs text-slate-600 leading-relaxed">Camions, pleins de carburant, voyages, pannes et classement des chauffeurs. Aucune vue sur les finances globales.</p></div>
-        </div>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div class="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-5 space-y-1"><h3 class="text-sm font-bold text-emerald-700"><i class="fa-solid fa-scale-balanced"></i> Les chiffres du terrain font foi</h3><p class="text-xs text-slate-700 leading-relaxed">Ce que saisissent les magasiniers, le transport et les chefs de chantier ne peut pas être modifié par la direction. Tout le monde travaille avec les mêmes chiffres, en toute transparence.</p></div>
-          <div class="bg-blue-500/10 border border-blue-500/30 rounded-2xl p-5 space-y-1"><h3 class="text-sm font-bold text-blue-700"><i class="fa-solid fa-wallet"></i> Votre argent reste chez vous</h3><p class="text-xs text-slate-700 leading-relaxed">MargeUp ne touche jamais les fonds de vos clients : ils arrivent directement sur vos comptes (espèces, Wave, Orange Money). Seul l’abonnement se règle via Wave ou Orange Money.</p></div>
-        </div>
-      </div>
+        <div class="grid md:grid-cols-3 gap-6">
+          <div class="bg-white p-7 rounded-2xl border border-slate-200 relative shadow-sm space-y-3">
+            <span class="text-5xl font-extrabold text-slate-100 absolute top-5 right-5 pointer-events-none">1</span>
+            <div class="w-9 h-9 rounded-full bg-yellow-400 text-slate-950 font-black flex items-center justify-center text-sm shadow-sm">1</div>
+            <h3 class="text-base font-bold text-slate-900">Créez votre espace entreprise</h3>
+            <p class="text-xs text-slate-600 leading-relaxed">
+              Renseignez votre société et vos dépôts. Vous bénéficiez de 15 jours d'essai gratuit complet, sans engagement et sans carte bancaire.
+            </p>
+          </div>
 
-      <!-- TARIFS EN BREF -->
-      <div class="bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 space-y-5">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 class="text-xl font-black text-slate-900">Tarification claire et adaptée</h2>
-            <p class="text-xs text-slate-600 mt-1">15 jours d’essai gratuit, sans engagement. Aucun frais caché.</p>
+          <div class="bg-white p-7 rounded-2xl border border-slate-200 relative shadow-sm space-y-3">
+            <span class="text-5xl font-extrabold text-slate-100 absolute top-5 right-5 pointer-events-none">2</span>
+            <div class="w-9 h-9 rounded-full bg-yellow-400 text-slate-950 font-black flex items-center justify-center text-sm shadow-sm">2</div>
+            <h3 class="text-base font-bold text-slate-900">L'équipe saisit sur le terrain</h3>
+            <p class="text-xs text-slate-600 leading-relaxed">
+              Vos magasiniers et chauffeurs enregistrent ventes, pleins et arrivages directement depuis leur téléphone, même sans connexion Internet.
+            </p>
           </div>
-          <div class="flex flex-wrap gap-2">
-            <button onclick="openCompanyModal()" class="bg-orange-500 hover:bg-orange-600 text-white font-bold px-4 py-2.5 rounded-xl text-xs cursor-pointer">Démarrer mon essai gratuit</button>
-            <button onclick="switchTab('tarifs')" class="ceo-only bg-slate-100 hover:bg-slate-200 text-slate-900 border border-slate-300 font-bold px-4 py-2.5 rounded-xl text-xs cursor-pointer">Voir les tarifs détaillés</button>
-          </div>
-        </div>
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div class="bg-slate-50 border border-slate-200 rounded-2xl p-5 text-center space-y-1">
-            <div class="text-xs text-slate-600 font-bold">B2C Détail</div>
-            <div class="text-2xl font-black text-slate-900">39 900 <span class="text-xs font-normal text-slate-600">FCFA</span></div>
-            <div class="text-[11px] text-slate-500">par mois (quincaillerie)</div>
-          </div>
-          <div class="bg-orange-500/10 border border-orange-500/30 rounded-2xl p-5 text-center space-y-1 relative">
-            <span class="absolute -top-2.5 left-1/2 -translate-x-1/2 bg-orange-500 text-white text-[9px] font-black uppercase px-2.5 py-0.5 rounded-full">Recommandé</span>
-            <div class="text-xs text-orange-700 font-bold">Complet Hybride</div>
-            <div class="text-2xl font-black text-orange-600">69 900 <span class="text-xs font-normal text-slate-600">FCFA</span></div>
-            <div class="text-[11px] text-orange-800">par mois (B2B + B2C + dépôts)</div>
-          </div>
-          <div class="bg-slate-50 border border-slate-200 rounded-2xl p-5 text-center space-y-1">
-            <div class="text-xs text-slate-600 font-bold">Flotte & Transport</div>
-            <div class="text-2xl font-black text-amber-700">9 900 <span class="text-xs font-normal text-slate-600">FCFA</span></div>
-            <div class="text-[11px] text-slate-500">par camion et par mois</div>
-          </div>
-        </div>
-      </div>
 
-      <!-- AVIS DES UTILISATEURS & TÉMOIGNAGES CLIENTS -->
-      <div class="space-y-6">
+          <div class="bg-white p-7 rounded-2xl border border-slate-200 relative shadow-sm space-y-3">
+            <span class="text-5xl font-extrabold text-slate-100 absolute top-5 right-5 pointer-events-none">3</span>
+            <div class="w-9 h-9 rounded-full bg-yellow-400 text-slate-950 font-black flex items-center justify-center text-sm shadow-sm">3</div>
+            <h3 class="text-base font-bold text-slate-900">Vous pilotez la marge</h3>
+            <p class="text-xs text-slate-600 leading-relaxed">
+              La direction consulte les alertes de rentabilité, le classement des chauffeurs et les marges nettes consolidées en temps réel.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 5. TÉMOIGNAGES DU TERRAIN (#temoignages) -->
+      <section id="temoignages" class="space-y-6 pt-6">
         <div class="flex flex-col md:flex-row md:items-end justify-between gap-4">
           <div>
-            <div class="inline-flex items-center space-x-1.5 bg-orange-500/10 text-orange-700 border border-orange-500/30 px-3 py-1 rounded-full text-xs font-bold mb-2">
+            <div class="inline-flex items-center space-x-1.5 bg-yellow-400/20 text-slate-900 border border-yellow-400/40 px-3 py-1 rounded-full text-xs font-bold mb-2">
               <i class="fa-solid fa-star text-amber-500"></i>
               <span>Cas d’Usage & Retours d’Expérience (Exemples illustratifs)</span>
             </div>
-            <h2 class="text-2xl sm:text-3xl font-black text-slate-900">Scénarios concrets et retours d’expérience</h2>
-            <p class="text-xs sm:text-sm text-slate-600 mt-1">Directeurs de travaux, gérants de quincaillerie et responsables de flotte témoignent de leur gain de marge.</p>
+            <h2 class="text-2xl sm:text-3xl font-black text-slate-900">Ce que disent les professionnels au Sénégal</h2>
+            <p class="text-xs sm:text-sm text-slate-600 mt-1">Exemples concrets de gains de marge pour gérants de quincaillerie et responsables de flotte.</p>
           </div>
-          <div class="flex items-center gap-3">
-            <button onclick="openReviewModal()" class="bg-orange-500 hover:bg-orange-600 text-white font-bold px-4 py-2.5 rounded-xl text-xs flex items-center space-x-2 transition shadow-md shadow-orange-500/25 cursor-pointer">
-              <i class="fa-solid fa-pen-to-square"></i>
-              <span>Donner mon avis</span>
-            </button>
-          </div>
+          <button onclick="openReviewModal()" class="bg-slate-900 hover:bg-slate-800 text-yellow-400 font-bold px-4 py-2.5 rounded-xl text-xs flex items-center space-x-2 transition shadow-md cursor-pointer shrink-0">
+            <i class="fa-solid fa-pen-to-square"></i>
+            <span>Partager mon retour</span>
+          </button>
         </div>
 
-        <!-- STATS DE SATISFACTION (OBJECTIFS & EXEMPLES ILLUSTRATIFS) -->
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-white border border-slate-200 rounded-2xl p-4 sm:p-5">
-          <div class="col-span-2 sm:col-span-4 text-center pb-1">
-            <span class="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 bg-slate-100 px-3 py-1 rounded-full border border-slate-200">
-              <i class="fa-solid fa-chart-pie text-orange-500"></i> Données indicatives & objectifs types de performance au Sénégal (exemples)
-            </span>
-          </div>
-          <div class="text-center p-2">
-            <div class="text-2xl sm:text-3xl font-black text-orange-600">4.9<span class="text-sm font-semibold text-slate-500">/5</span></div>
-            <div class="flex justify-center text-amber-400 text-xs my-1">
-              <i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i>
-            </div>
-            <div class="text-[11px] text-slate-500 font-medium">Note cible de service</div>
-          </div>
-          <div class="text-center p-2 border-l border-slate-100">
-            <div class="text-2xl sm:text-3xl font-black text-slate-900">98%</div>
-            <div class="text-emerald-600 text-xs my-1 font-bold"><i class="fa-solid fa-thumbs-up"></i> Satisfaction visée</div>
-            <div class="text-[11px] text-slate-500 font-medium">Taux recommandé</div>
-          </div>
-          <div class="text-center p-2 border-l border-slate-100">
-            <div class="text-2xl sm:text-3xl font-black text-slate-900">+120</div>
-            <div class="text-orange-600 text-xs my-1 font-bold"><i class="fa-solid fa-truck-pickup"></i> Objectif de parc</div>
-            <div class="text-[11px] text-slate-500 font-medium">Véhicules & dépôts ciblés</div>
-          </div>
-          <div class="text-center p-2 border-l border-slate-100">
-            <div class="text-2xl sm:text-3xl font-black text-emerald-600">-18%</div>
-            <div class="text-emerald-700 text-xs my-1 font-bold"><i class="fa-solid fa-arrow-trend-down"></i> Réduction estimée</div>
-            <div class="text-[11px] text-slate-500 font-medium">Sur les pertes & carburant</div>
-          </div>
-        </div>
-
-        <!-- LISTE DYNAMIQUE DES AVIS -->
         <div id="reviews-container" class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <!-- Injecté dynamiquement par renderReviews() -->
         </div>
-      </div>
+      </section>
 
-      <!-- QUESTIONS FRÉQUENTES -->
-      <div class="space-y-4">
-        <h2 class="text-2xl font-black text-slate-900">Questions fréquentes</h2>
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
-          <details class="bg-slate-50 border border-slate-200 rounded-xl p-4 group"><summary class="cursor-pointer text-sm font-bold text-slate-900 list-none flex justify-between gap-3">L’essai est-il vraiment gratuit ?<i class="fa-solid fa-chevron-down text-slate-500 text-xs mt-1"></i></summary><p class="text-xs text-slate-600 leading-relaxed mt-2">Oui. Vous avez 15 jours pour tout essayer, sans engagement et sans paiement. Vous ne payez qu’en choisissant de vous abonner.</p></details>
-          <details class="bg-slate-50 border border-slate-200 rounded-xl p-4 group"><summary class="cursor-pointer text-sm font-bold text-slate-900 list-none flex justify-between gap-3">Qui peut modifier les chiffres ?<i class="fa-solid fa-chevron-down text-slate-500 text-xs mt-1"></i></summary><p class="text-xs text-slate-600 leading-relaxed mt-2">Seule l’équipe de terrain saisit et corrige ses données. La direction les consulte sans pouvoir les modifier : c’est ce qui garantit la confiance.</p></details>
-          <details class="bg-slate-50 border border-slate-200 rounded-xl p-4 group"><summary class="cursor-pointer text-sm font-bold text-slate-900 list-none flex justify-between gap-3">Mon argent passe-t-il par MargeUp ?<i class="fa-solid fa-chevron-down text-slate-500 text-xs mt-1"></i></summary><p class="text-xs text-slate-600 leading-relaxed mt-2">Non. Les paiements de vos clients arrivent directement sur vos comptes. MargeUp est un outil de gestion, de traçabilité et de contrôle.</p></details>
-          <details class="bg-slate-50 border border-slate-200 rounded-xl p-4 group"><summary class="cursor-pointer text-sm font-bold text-slate-900 list-none flex justify-between gap-3">Faut-il installer un logiciel ?<i class="fa-solid fa-chevron-down text-slate-500 text-xs mt-1"></i></summary><p class="text-xs text-slate-600 leading-relaxed mt-2">Non. MargeUp s’ouvre dans le navigateur, sur téléphone, tablette ou ordinateur.</p></details>
-          <details class="bg-slate-50 border border-slate-200 rounded-xl p-4 group"><summary class="cursor-pointer text-sm font-bold text-slate-900 list-none flex justify-between gap-3">Comment fonctionne le tarif par camion ?<i class="fa-solid fa-chevron-down text-slate-500 text-xs mt-1"></i></summary><p class="text-xs text-slate-600 leading-relaxed mt-2">Vous payez 9 900 FCFA par camion et par mois. Vous pouvez ajuster le nombre de véhicules à tout moment selon l'évolution de votre flotte.</p></details>
-          <details class="bg-slate-50 border border-slate-200 rounded-xl p-4 group"><summary class="cursor-pointer text-sm font-bold text-slate-900 list-none flex justify-between gap-3">Comment payer l’abonnement ?<i class="fa-solid fa-chevron-down text-slate-500 text-xs mt-1"></i></summary><p class="text-xs text-slate-600 leading-relaxed mt-2">Par transfert direct Wave ou Orange Money vers notre numéro marchand officiel avec confirmation par SMS / référence de transaction, validée sous 24h par notre équipe support. Aucun prélèvement automatique bancaire n’est requis.</p></details>
-        </div>
-      </div>
-
-      <!-- BANDEAU DE CONTACT DÉDIÉ (EN BAS DE L'ACCUEIL) -->
-      <div id="contact-box" class="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white border border-slate-700 rounded-3xl p-6 sm:p-8 shadow-2xl">
-        <div class="flex flex-col lg:flex-row items-center justify-between gap-6">
-          <div class="space-y-3 text-center lg:text-left">
-            <div class="inline-flex items-center space-x-2 bg-orange-500/20 text-orange-400 border border-orange-500/30 px-3 py-0.5 rounded-full text-xs font-bold">
-              <i class="fa-solid fa-headset"></i>
-              <span>Équipe Dédiée au Sénégal</span>
-            </div>
-            <h2 class="text-xl sm:text-2xl font-black text-white">Une question ? Besoin d’une démonstration ?</h2>
-            <p class="text-xs text-slate-300 max-w-xl leading-relaxed">
-              Notre équipe basée à Dakar vous accompagne pour paramétrer vos quincailleries, chantiers et camions. Contactez-nous par e-mail ou WhatsApp :
-            </p>
-            <div class="flex flex-wrap items-center justify-center lg:justify-start gap-2 pt-1">
-              <a href="mailto:margeup0@gmail.com" class="inline-flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-orange-400 hover:text-orange-300 px-3.5 py-2 rounded-xl text-xs font-bold border border-slate-600 transition shadow-sm cursor-pointer" title="Nous écrire par e-mail">
-                <i class="fa-solid fa-envelope text-sm"></i>
-                <span class="underline">margeup0@gmail.com</span>
-              </a>
-              <a href="https://wa.me/221771906476?text=Bonjour%20MargeUp,%20je%20souhaite%20des%20informations%20sur%20l'application" target="_blank" rel="noopener" class="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-3.5 py-2 rounded-xl text-xs font-bold transition shadow-sm cursor-pointer" title="Rejoindre directement sur WhatsApp">
-                <i class="fa-brands fa-whatsapp text-sm text-emerald-200"></i>
-                <span>Rejoindre sur WhatsApp</span>
-              </a>
-            </div>
+      <!-- 6. TARIFICATION INTERACTIVE (#tarification) -->
+      <section id="tarification" class="space-y-8 pt-6">
+        <div class="text-center max-w-3xl mx-auto space-y-3">
+          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-700 text-xs font-bold uppercase tracking-wider border border-emerald-500/20">
+            Tarification claire &amp; adaptée
           </div>
+          <h2 class="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
+            Choisissez l'offre taillée pour votre activité
+          </h2>
+          <p class="text-sm text-slate-600">15 jours d'essai gratuit complet. Aucun engagement. Montants en FCFA.</p>
 
-          <div class="flex flex-wrap items-center justify-center gap-3">
-            <a href="https://wa.me/221771906476?text=Bonjour%20MargeUp,%20je%20souhaite%20des%20informations%20sur%20l'application" target="_blank" rel="noopener" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-3 rounded-xl text-xs flex items-center space-x-2 transition shadow-lg shadow-emerald-600/30 cursor-pointer">
-              <i class="fa-brands fa-whatsapp text-base"></i>
-              <span>WhatsApp Direct</span>
-            </a>
-            <button type="button" onclick="openContactModal()" class="bg-orange-500 hover:bg-orange-600 text-white font-bold px-4 py-3 rounded-xl text-xs flex items-center space-x-2 shadow-lg shadow-orange-500/30 transition cursor-pointer">
-              <i class="fa-solid fa-paper-plane"></i>
-              <span>Formulaire</span>
-            </button>
-            <a href="tel:+221771906476" class="bg-slate-800 hover:bg-slate-700 text-white border border-slate-600 font-bold px-4 py-3 rounded-xl text-xs flex items-center space-x-2 transition">
-              <i class="fa-solid fa-phone"></i>
-              <span>77 190 64 76</span>
-            </a>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ==================== SECTION 2: CALCULATEUR DE TARIFS COMPLET ==================== -->
-    <section id="view-tarifs" class="hidden space-y-8">
-      <div class="py-6 sm:py-10 max-w-6xl mx-auto space-y-8">
-
-        <!-- HEADER TARIFICATION CLAIRE -->
-        <div class="text-center space-y-3">
-          <div class="inline-flex items-center space-x-2 bg-orange-500/10 text-orange-600 border border-orange-500/30 px-3.5 py-1 rounded-full text-[11px] font-black uppercase tracking-wider">
-            <i class="fa-solid fa-tags"></i>
-            <span>Tarification claire</span>
-          </div>
-          <h2 class="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight">Nos Offres d'Abonnement MargeUp</h2>
-          <p class="text-xs sm:text-sm text-slate-500 max-w-xl mx-auto">
-            Des offres adaptées à tous vos besoins au Sénégal, sans aucun frais caché. 15 jours d'essai gratuit sur tous les packs.
-          </p>
-
-          <!-- BASCULE FACTURATION MENSUELLE / ANNUELLE & OFFRE RESEAU -->
-          <div class="flex flex-wrap items-center justify-center gap-3 pt-2">
+          <!-- BASCULE FACTURATION MENSUELLE / ANNUELLE -->
+          <div class="flex flex-wrap items-center justify-center gap-3 pt-3">
             <div class="inline-flex items-center bg-white border border-slate-300 rounded-full p-1 shadow-sm">
-              <button id="btn-billing-monthly" type="button" onclick="setBillingCycle('monthly')" class="px-4 py-1.5 rounded-full text-xs font-bold transition bg-orange-500 text-white cursor-pointer">
+              <button id="btn-billing-monthly" type="button" onclick="setBillingCycle('monthly')" class="px-4 py-1.5 rounded-full text-xs font-bold transition bg-yellow-400 text-slate-950 cursor-pointer">
                 Facturation Mensuelle
               </button>
               <button id="btn-billing-annual" type="button" onclick="setBillingCycle('annual')" class="px-4 py-1.5 rounded-full text-xs font-bold transition text-slate-600 hover:text-slate-900 cursor-pointer">
@@ -435,11 +477,11 @@
           </div>
         </div>
 
-        <!-- GRILLE DES 3 OFFRES MARGEUP -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 items-stretch pt-2">
+        <!-- GRILLE DES OFFRES -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 items-stretch">
 
-          <!-- 1. QUINCAILLERIE B2C DÉTAIL -->
-          <div class="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 flex flex-col justify-between space-y-6 shadow-sm hover:shadow-md hover:border-orange-500/40 transition">
+          <!-- 1. PACK B2C DÉTAIL -->
+          <div class="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 flex flex-col justify-between space-y-6 shadow-sm hover:shadow-md transition">
             <div class="space-y-4">
               <div class="text-center pb-2 border-b border-slate-100">
                 <h3 class="text-xl font-black text-slate-900">B2C Détail</h3>
@@ -459,7 +501,7 @@
                 <div class="bg-slate-50 border border-slate-200 rounded-2xl p-2.5 mt-3 space-y-1.5 text-left">
                   <div class="flex justify-between items-center text-xs">
                     <span class="font-bold text-slate-700">Nombre de points de vente :</span>
-                    <input type="number" id="quinc-b2c-qty" min="1" max="20" value="1" oninput="updateQuincPricing('b2c')" class="w-14 bg-white border border-slate-300 rounded-lg p-1 text-center font-bold text-slate-900 text-xs focus:outline-none focus:border-orange-500">
+                    <input type="number" id="quinc-b2c-qty" min="1" max="20" value="1" oninput="updateQuincPricing('b2c')" class="w-14 bg-white border border-slate-300 rounded-lg p-1 text-center font-bold text-slate-900 text-xs focus:outline-none focus:border-yellow-400">
                   </div>
                   <div id="disc-notice-b2c" class="text-[10px] text-emerald-700 font-bold hidden bg-emerald-50 p-1.5 rounded-lg border border-emerald-200">
                     <i class="fa-solid fa-gift"></i> Remise Réseau -10% appliquée !
@@ -467,40 +509,23 @@
                 </div>
               </div>
 
-              <!-- LISTE DES FONCTIONNALITÉS -->
               <ul class="space-y-3 text-xs text-slate-600 pt-2 border-t border-slate-100">
-                <li class="flex items-start space-x-2.5">
-                  <i class="fa-solid fa-circle-check text-orange-500 mt-0.5"></i>
-                  <span>Gestion caisse au comptoir (Particuliers & Artisans)</span>
-                </li>
-                <li class="flex items-start space-x-2.5">
-                  <i class="fa-solid fa-circle-check text-orange-500 mt-0.5"></i>
-                  <span>Suivi du stock permanent & alertes de rupture</span>
-                </li>
-                <li class="flex items-start space-x-2.5">
-                  <i class="fa-solid fa-circle-check text-orange-500 mt-0.5"></i>
-                  <span>Reçus de caisse & factures PDF téléchargeables</span>
-                </li>
-                <li class="flex items-start space-x-2.5">
-                  <i class="fa-solid fa-circle-check text-orange-500 mt-0.5"></i>
-                  <span>Envoi direct des reçus par WhatsApp</span>
-                </li>
-                <li class="flex items-start space-x-2.5">
-                  <i class="fa-solid fa-circle-check text-orange-500 mt-0.5"></i>
-                  <span>Pass Magasinier / Caissier dédié</span>
-                </li>
+                <li class="flex items-start space-x-2.5"><i class="fa-solid fa-circle-check text-yellow-500 mt-0.5"></i><span>Gestion caisse au comptoir (Particuliers)</span></li>
+                <li class="flex items-start space-x-2.5"><i class="fa-solid fa-circle-check text-yellow-500 mt-0.5"></i><span>Suivi du stock permanent &amp; alertes rupture</span></li>
+                <li class="flex items-start space-x-2.5"><i class="fa-solid fa-circle-check text-yellow-500 mt-0.5"></i><span>Reçus de caisse &amp; factures PDF téléchargeables</span></li>
+                <li class="flex items-start space-x-2.5"><i class="fa-solid fa-circle-check text-yellow-500 mt-0.5"></i><span>Envoi direct des reçus par WhatsApp</span></li>
               </ul>
             </div>
 
-            <button onclick="chooseQuincPack('b2c_retail', 39900, 'Pack B2C Détail')" class="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3.5 rounded-full text-xs transition cursor-pointer shadow-sm">
+            <button onclick="chooseQuincPack('b2c_retail', 39900, 'Pack B2C Détail')" class="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3.5 rounded-xl text-xs transition cursor-pointer shadow-sm">
               Choisir B2C Détail
             </button>
           </div>
 
           <!-- 2. PACK COMPLET HYBRIDE (RECOMMANDÉ) -->
-          <div class="relative bg-white border-2 border-orange-500 rounded-3xl p-6 sm:p-8 flex flex-col justify-between space-y-6 shadow-xl hover:shadow-2xl transition -translate-y-1">
-            <div class="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-gradient-to-r from-orange-500 to-amber-500 text-white text-[10px] font-black uppercase px-4 py-1 rounded-full shadow-md tracking-wider">
-              Recommandé
+          <div class="relative bg-white border-2 border-yellow-400 rounded-3xl p-6 sm:p-8 flex flex-col justify-between space-y-6 shadow-xl hover:shadow-2xl transition -translate-y-1">
+            <div class="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-yellow-400 text-slate-950 text-[10px] font-black uppercase px-4 py-1 rounded-full shadow-md tracking-wider">
+              Le plus populaire
             </div>
 
             <div class="space-y-4 pt-2">
@@ -512,17 +537,17 @@
               <!-- PRIX -->
               <div class="text-center py-1">
                 <div class="flex items-baseline justify-center space-x-1">
-                  <span id="price-hybrid" class="text-4xl font-black text-orange-600">69 900</span>
+                  <span id="price-hybrid" class="text-4xl font-black text-slate-900">69 900</span>
                   <span class="text-xs font-bold text-slate-600">FCFA</span>
                   <span id="cycle-hybrid" class="text-xs text-slate-400">/mois</span>
                 </div>
-                <div class="text-[11px] text-emerald-600 font-bold mt-1">Le plus populaire au Sénégal</div>
+                <div class="text-[11px] text-emerald-600 font-bold mt-1">Essai gratuit 15 jours sans carte</div>
 
                 <!-- SELECTEUR MULTI-QUINCAILLERIES HYBRIDE -->
-                <div class="bg-orange-500/10 border border-orange-500/20 rounded-2xl p-2.5 mt-3 space-y-1.5 text-left">
+                <div class="bg-yellow-400/10 border border-yellow-400/30 rounded-2xl p-2.5 mt-3 space-y-1.5 text-left">
                   <div class="flex justify-between items-center text-xs">
-                    <span class="font-bold text-slate-800">Nombre de dépôts / quincailleries :</span>
-                    <input type="number" id="quinc-hybrid-qty" min="1" max="20" value="1" oninput="updateQuincPricing('hybrid')" class="w-14 bg-white border border-slate-300 rounded-lg p-1 text-center font-bold text-slate-900 text-xs focus:outline-none focus:border-orange-500">
+                    <span class="font-bold text-slate-800">Nombre de dépôts / magasins :</span>
+                    <input type="number" id="quinc-hybrid-qty" min="1" max="20" value="1" oninput="updateQuincPricing('hybrid')" class="w-14 bg-white border border-slate-300 rounded-lg p-1 text-center font-bold text-slate-900 text-xs focus:outline-none focus:border-yellow-400">
                   </div>
                   <div id="disc-notice-hybrid" class="text-[10px] text-emerald-700 font-bold hidden bg-emerald-50 p-1.5 rounded-lg border border-emerald-200">
                     <i class="fa-solid fa-gift"></i> Remise Réseau -10% appliquée !
@@ -530,41 +555,24 @@
                 </div>
               </div>
 
-              <!-- LISTE DES FONCTIONNALITÉS -->
               <ul class="space-y-3 text-xs text-slate-700 pt-2 border-t border-slate-100">
-                <li class="flex items-start space-x-2.5 font-bold text-slate-900">
-                  <i class="fa-solid fa-circle-check text-orange-500 mt-0.5"></i>
-                  <span>Tout ce qui est inclus dans le Pack B2C Détail</span>
-                </li>
-                <li class="flex items-start space-x-2.5">
-                  <i class="fa-solid fa-circle-check text-orange-500 mt-0.5"></i>
-                  <span>Double Guichet : Vente Détail + Sorties Gros B2B</span>
-                </li>
-                <li class="flex items-start space-x-2.5">
-                  <i class="fa-solid fa-circle-check text-orange-500 mt-0.5"></i>
-                  <span>Bons de sortie interne & livraisons chantiers</span>
-                </li>
-                <li class="flex items-start space-x-2.5">
-                  <i class="fa-solid fa-circle-check text-orange-500 mt-0.5"></i>
-                  <span>Rapprochement automatique et historique chantiers</span>
-                </li>
-                <li class="flex items-start space-x-2.5">
-                  <i class="fa-solid fa-circle-check text-orange-500 mt-0.5"></i>
-                  <span>Multi-Unités de Mesure (UOM barres, palettes, sacs)</span>
-                </li>
+                <li class="flex items-start space-x-2.5 font-bold text-slate-900"><i class="fa-solid fa-circle-check text-yellow-500 mt-0.5"></i><span>Tout ce qui est inclus dans le Pack B2C</span></li>
+                <li class="flex items-start space-x-2.5"><i class="fa-solid fa-circle-check text-yellow-500 mt-0.5"></i><span>Double Guichet : Vente Détail + Sorties Gros B2B</span></li>
+                <li class="flex items-start space-x-2.5"><i class="fa-solid fa-circle-check text-yellow-500 mt-0.5"></i><span>Bons de sortie interne &amp; livraisons chantiers</span></li>
+                <li class="flex items-start space-x-2.5"><i class="fa-solid fa-circle-check text-yellow-500 mt-0.5"></i><span>Conversion sacs ↔ tonnes exacte de ciment</span></li>
               </ul>
             </div>
 
-            <button onclick="chooseQuincPack('hybrid_b2b_b2c', 69900, 'Complet Hybride B2B + B2C')" class="w-full bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-bold py-3.5 rounded-full text-xs transition shadow-lg shadow-orange-500/30 cursor-pointer">
+            <button onclick="chooseQuincPack('hybrid_b2b_b2c', 69900, 'Complet Hybride B2B + B2C')" class="w-full bg-yellow-400 hover:bg-yellow-300 text-slate-950 font-extrabold py-3.5 rounded-xl text-xs transition shadow-lg shadow-yellow-400/20 cursor-pointer">
               Choisir Hybride (Recommandé)
             </button>
           </div>
 
-          <!-- 3. FLOTTE & TRANSPORT (PAR NOMBRE DE CAMIONS) -->
-          <div class="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 flex flex-col justify-between space-y-6 shadow-sm hover:shadow-md hover:border-amber-500/40 transition">
+          <!-- 3. FLOTTE & TRANSPORT -->
+          <div class="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 flex flex-col justify-between space-y-6 shadow-sm hover:shadow-md transition">
             <div class="space-y-4">
               <div class="text-center pb-2 border-b border-slate-100">
-                <h3 class="text-xl font-black text-slate-900">Flotte & Transport</h3>
+                <h3 class="text-xl font-black text-slate-900">Flotte &amp; Transport</h3>
                 <p class="text-xs text-slate-500 mt-1">Tarif flexible selon le nombre exact de camions de votre parc</p>
               </div>
 
@@ -577,48 +585,181 @@
                 </div>
 
                 <!-- SELECTEUR DYNAMIQUE DE CAMIONS -->
-                <div class="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-2.5 mt-3 space-y-1.5 text-left">
+                <div class="bg-slate-50 border border-slate-200 rounded-2xl p-2.5 mt-3 space-y-1.5 text-left">
                   <div class="flex justify-between items-center text-xs">
                     <span class="font-bold text-slate-700">Taille de votre parc :</span>
-                    <span id="truck-count-display" class="font-black text-amber-800 text-xs bg-white px-2 py-0.5 rounded border border-amber-300">1 camion</span>
+                    <span id="truck-count-display" class="font-black text-slate-950 text-xs bg-yellow-400 px-2 py-0.5 rounded">1 camion</span>
                   </div>
-                  <input type="range" id="truck-range" min="1" max="30" value="1" oninput="updateTruckPricing(this.value)" class="w-full accent-amber-600 h-2 bg-amber-200 rounded-lg cursor-pointer">
-                  <div class="flex justify-between items-center text-xs pt-1 border-t border-amber-500/20">
+                  <input type="range" id="truck-range" min="1" max="30" value="1" oninput="updateTruckPricing(this.value)" class="w-full accent-yellow-400 h-2 bg-slate-200 rounded-lg cursor-pointer">
+                  <div class="flex justify-between items-center text-xs pt-1 border-t border-slate-200">
                     <span class="text-slate-600">Total parc mensuel :</span>
-                    <span id="truck-total-display" class="font-black text-amber-900 text-sm">9 900 FCFA</span>
+                    <span id="truck-total-display" class="font-black text-slate-900 text-sm">9 900 FCFA</span>
                   </div>
                 </div>
               </div>
 
-              <!-- LISTE DES FONCTIONNALITÉS -->
               <ul class="space-y-3 text-xs text-slate-600 pt-2 border-t border-slate-100">
-                <li class="flex items-start space-x-2.5">
-                  <i class="fa-solid fa-circle-check text-amber-600 mt-0.5"></i>
-                  <span>Suivi carburant, pleins, km & consommations</span>
-                </li>
-                <li class="flex items-start space-x-2.5">
-                  <i class="fa-solid fa-circle-check text-amber-600 mt-0.5"></i>
-                  <span>Registre des pannes, gravités & coûts de réparation</span>
-                </li>
-                <li class="flex items-start space-x-2.5">
-                  <i class="fa-solid fa-circle-check text-amber-600 mt-0.5"></i>
-                  <span>Classement automatique du meilleur chauffeur à primer</span>
-                </li>
-                <li class="flex items-start space-x-2.5">
-                  <i class="fa-solid fa-circle-check text-amber-600 mt-0.5"></i>
-                  <span>Suivi des voyages, tours et rotations</span>
-                </li>
+                <li class="flex items-start space-x-2.5"><i class="fa-solid fa-circle-check text-yellow-500 mt-0.5"></i><span>Suivi carburant, pleins, km &amp; consommations</span></li>
+                <li class="flex items-start space-x-2.5"><i class="fa-solid fa-circle-check text-yellow-500 mt-0.5"></i><span>Registre des pannes, gravités &amp; coûts</span></li>
+                <li class="flex items-start space-x-2.5"><i class="fa-solid fa-circle-check text-yellow-500 mt-0.5"></i><span>Classement automatique du meilleur chauffeur</span></li>
+                <li class="flex items-start space-x-2.5"><i class="fa-solid fa-circle-check text-yellow-500 mt-0.5"></i><span>Suivi des voyages, tours et rotations</span></li>
               </ul>
             </div>
 
-            <button onclick="chooseTruckPack()" class="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3.5 rounded-full text-xs transition cursor-pointer shadow-sm">
+            <button onclick="chooseTruckPack()" class="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3.5 rounded-xl text-xs transition cursor-pointer shadow-sm">
               Choisir ce Parc Flotte
             </button>
           </div>
 
         </div>
 
+        <!-- PLAN GRAND COMPTE -->
+        <div class="max-w-3xl mx-auto bg-slate-900 text-white rounded-3xl p-6 sm:p-8 border border-slate-800 shadow-xl relative overflow-hidden">
+          <div class="absolute top-0 right-0 bg-yellow-400 text-slate-950 font-black text-xs uppercase px-4 py-1.5 rounded-bl-xl tracking-wider">
+            Sur-Mesure
+          </div>
+          <h3 class="text-xl sm:text-2xl font-black mb-2">Plan Entreprise &amp; Grand Compte BTP</h3>
+          <p class="text-xs text-slate-300 mb-6 leading-relaxed">
+            Pour les majors du génie civil et transporteurs de fret exigeant multi-dépôts illimités, accompagnement sur site et intégrations spécifiques.
+          </p>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-slate-200 mb-6">
+            <div class="flex items-center gap-2"><i class="fa-solid fa-check text-yellow-400"></i><span>Support dédié 24/7 basé à Dakar</span></div>
+            <div class="flex items-center gap-2"><i class="fa-solid fa-check text-yellow-400"></i><span>Multi-dépôts &amp; multi-chantiers illimités</span></div>
+            <div class="flex items-center gap-2"><i class="fa-solid fa-check text-yellow-400"></i><span>Formation des équipes terrain sur site</span></div>
+            <div class="flex items-center gap-2"><i class="fa-solid fa-check text-yellow-400"></i><span>Export comptable &amp; intégration sur mesure</span></div>
+          </div>
+          <button onclick="openContactModal('Plan Grand Compte')" class="w-full py-3.5 rounded-xl bg-yellow-400 text-slate-950 font-black text-xs hover:bg-yellow-300 transition shadow-lg cursor-pointer">
+            Demander une offre sur mesure
+          </button>
+        </div>
+      </section>
+
+      <!-- 7. PORTAIL DE CONNEXION & INSCRIPTION RÉELLE (#connexion) -->
+      <section id="connexion" class="pt-6">
+        <div class="max-w-2xl mx-auto bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-10 text-white shadow-2xl relative overflow-hidden">
+          <div class="absolute -right-16 -top-16 w-60 h-60 bg-yellow-400/10 rounded-full blur-3xl pointer-events-none"></div>
+
+          <!-- Entête du portail -->
+          <div class="text-center space-y-2 mb-8 relative z-10">
+            <div class="inline-flex items-center gap-1.5 bg-yellow-400/10 text-yellow-400 border border-yellow-400/30 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider">
+              <i class="fa-solid fa-shield-halved"></i>
+              <span>Accès Espace Sécurisé</span>
+            </div>
+            <h2 class="text-2xl sm:text-3xl font-black text-white">
+              Passez à l'action avec MargeUp
+            </h2>
+            <p class="text-xs text-slate-400">
+              Connectez-vous avec vos identifiants réels ou créez votre entreprise pour 15 jours d'essai gratuit.
+            </p>
+
+            <!-- Deux onglets : Connexion vs Inscription -->
+            <div class="flex items-center justify-center p-1 bg-slate-950 border border-slate-800 rounded-2xl max-w-sm mx-auto mt-4">
+              <button id="tab-btn-login" type="button" onclick="switchAuthTab('login')" class="flex-1 py-2 rounded-xl text-xs font-bold transition bg-yellow-400 text-slate-950 cursor-pointer">
+                Connexion
+              </button>
+              <button id="tab-btn-signup" type="button" onclick="switchAuthTab('signup')" class="flex-1 py-2 rounded-xl text-xs font-bold transition text-slate-400 hover:text-white cursor-pointer">
+                Créer mon espace (15j)
+              </button>
+            </div>
+          </div>
+
+          <!-- FORMULAIRE 1 : CONNEXION DIRECTE PAR E-MAIL OU TÉLÉPHONE -->
+          <form id="form-auth-login" onsubmit="handleDirectLogin(event)" class="space-y-4 relative z-10">
+            <div>
+              <label class="block text-xs font-semibold text-slate-300 mb-1">
+                E-mail ou Numéro de téléphone réel *
+              </label>
+              <div class="relative">
+                <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500 text-xs">
+                  <i class="fa-solid fa-user"></i>
+                </span>
+                <input id="login-identifier" type="text" required placeholder="Ex. 77 123 45 67 ou patron@entreprise.sn" class="w-full bg-slate-950 border border-slate-700 rounded-xl pl-9 pr-3 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-yellow-400 focus:ring-1 focus:ring-yellow-400">
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-semibold text-slate-300 mb-1">
+                  Accès Profil / Rôle *
+                </label>
+                <select id="login-role" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-yellow-400 font-bold focus:outline-none focus:border-yellow-400">
+                  <option value="ceo">Direction (CEO / Gérant)</option>
+                  <option value="magasinier">Pass Magasinier (Quincaillerie)</option>
+                  <option value="transport">Pass Transport (Flotte &amp; Pannes)</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-slate-300 mb-1">
+                  Mot de passe *
+                </label>
+                <input id="login-password" type="password" required placeholder="••••••••" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-yellow-400">
+              </div>
+            </div>
+
+            <div id="login-error" class="text-xs text-rose-400 text-center font-semibold min-h-[16px]"></div>
+
+            <button type="submit" class="w-full py-3.5 rounded-xl bg-yellow-400 text-slate-950 font-black text-xs hover:bg-yellow-300 transition shadow-lg shadow-yellow-400/20 cursor-pointer flex items-center justify-center gap-2">
+              <span>Entrer dans mon espace ERP</span>
+              <i class="fa-solid fa-arrow-right"></i>
+            </button>
+            <p class="text-[11px] text-center text-slate-400 pt-1">
+              Pas encore de compte ? <a onclick="switchAuthTab('signup')" class="text-yellow-400 underline font-bold cursor-pointer">Démarrer 15 jours d'essai gratuit</a>
+            </p>
+          </form>
+
+          <!-- FORMULAIRE 2 : INSCRIPTION RÉELLE & ESSAI 15 JOURS -->
+          <form id="form-auth-signup" onsubmit="handleDirectSignup(event)" class="space-y-4 relative z-10 hidden">
+            <div>
+              <label class="block text-xs font-semibold text-slate-300 mb-1">Nom de votre entreprise *</label>
+              <input id="signup-nom" type="text" required placeholder="Ex. Touba BTP &amp; Transport SARL" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-yellow-400">
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-semibold text-slate-300 mb-1">Nom du gérant (Patron) *</label>
+                <input id="signup-resp" type="text" required placeholder="Ex. Moussa Ndiaye" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-yellow-400">
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-slate-300 mb-1">Ville d'implantation *</label>
+                <input id="signup-ville" type="text" required placeholder="Ex. Dakar, Thiès, Diamniadio" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-yellow-400">
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-semibold text-slate-300 mb-1">Téléphone réel (WhatsApp) *</label>
+                <input id="signup-tel" type="tel" required minlength="9" placeholder="77 000 00 00" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-yellow-400">
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-slate-300 mb-1">E-mail réel de l'entreprise *</label>
+                <input id="signup-email" type="email" required placeholder="contact@entreprise.sn" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-yellow-400">
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-slate-300 mb-1">Mot de passe pour l'espace Direction *</label>
+              <input id="signup-pw" type="password" required minlength="4" placeholder="Minimum 4 caractères" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-yellow-400">
+            </div>
+
+            <div id="signup-error" class="text-xs text-rose-400 text-center font-semibold min-h-[16px]"></div>
+
+            <button type="submit" class="w-full py-3.5 rounded-xl bg-yellow-400 text-slate-950 font-black text-xs hover:bg-yellow-300 transition shadow-lg shadow-yellow-400/20 cursor-pointer flex items-center justify-center gap-2">
+              <i class="fa-solid fa-gift"></i>
+              <span>Activer mon essai gratuit de 15 jours</span>
+            </button>
+            <p class="text-[11px] text-center text-slate-400 pt-1">
+              Vous avez déjà un compte ? <a onclick="switchAuthTab('login')" class="text-yellow-400 underline font-bold cursor-pointer">Se connecter directement</a>
+            </p>
+          </form>
+
+        </div>
+      </section>
+
+      <!-- 8. BANDEAU DE CONTACT DÉDIÉ (DAKAR / SÉNÉGAL) -->
+      <div id="contact-box" class="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl">
+        <!-- Rendu dynamique par renderContact() -->
       </div>
+
     </section>
 
     <!-- ==================== SECTION 3: TABLEAU DE BORD CEO ==================== -->
@@ -644,7 +785,7 @@
               <i class="fa-solid fa-cloud-arrow-down text-orange-400"></i>
               <span>Sauvegarder</span>
             </button>
-            <button onclick="switchTab('tarifs')" class="bg-orange-500 hover:bg-orange-600 text-white font-bold px-4 py-2.5 rounded-xl text-xs flex items-center space-x-2 shadow-lg shadow-orange-500/30 transition">
+            <button onclick="switchTab('tarifs')" class="bg-yellow-400 hover:bg-yellow-300 text-slate-950 font-bold font-bold px-4 py-2.5 rounded-xl text-xs flex items-center space-x-2 shadow-lg shadow-orange-500/30 transition">
               <i class="fa-solid fa-crown"></i>
               <span>Mon Abonnement</span>
             </button>
@@ -950,40 +1091,70 @@
         <div class="grid grid-cols-2 md:grid-cols-4 gap-6 pt-4">
           <div class="bg-slate-50 border border-slate-200 p-6 rounded-2xl flex flex-col items-center justify-center space-y-2 text-center"><i class="fa-solid fa-building-shield text-3xl text-orange-500"></i><span class="text-sm font-bold text-slate-900">Entreprises de BTP</span><span class="text-[11px] text-slate-600">Bâtiment, génie civil, voirie</span></div><div class="bg-slate-50 border border-slate-200 p-6 rounded-2xl flex flex-col items-center justify-center space-y-2 text-center"><i class="fa-solid fa-truck-ramp-box text-3xl text-amber-500"></i><span class="text-sm font-bold text-slate-900">Transporteurs</span><span class="text-[11px] text-slate-600">Camions, toupies, engins</span></div><div class="bg-slate-50 border border-slate-200 p-6 rounded-2xl flex flex-col items-center justify-center space-y-2 text-center"><i class="fa-solid fa-store text-3xl text-purple-500"></i><span class="text-sm font-bold text-slate-900">Quincailleries</span><span class="text-[11px] text-slate-600">Dépôts, vente en détail et en gros</span></div><div class="bg-slate-50 border border-slate-200 p-6 rounded-2xl flex flex-col items-center justify-center space-y-2 text-center"><i class="fa-solid fa-hard-hat text-3xl text-emerald-500"></i><span class="text-sm font-bold text-slate-900">Promoteurs</span><span class="text-[11px] text-slate-600">Suivi des bâtiments et des délais</span></div>
         </div>
-        <button onclick="openCompanyModal()" class="bg-orange-500 hover:bg-orange-600 text-white font-bold px-5 py-3 rounded-xl text-sm">Démarrer mon essai gratuit de 15 jours</button>
+        <button onclick="openCompanyModal()" class="bg-yellow-400 hover:bg-yellow-300 text-slate-950 font-bold font-bold px-5 py-3 rounded-xl text-sm">Démarrer mon essai gratuit de 15 jours</button>
       </div>
     </section>
 
   <!-- ==================== VUE VERROUILLÉE ==================== -->
     <section id="view-locked" class="hidden">
       <div class="bg-white border border-slate-200 rounded-2xl p-10 text-center space-y-4 max-w-xl mx-auto">
-        <div class="relative w-20 h-20 mx-auto"><img src="images/logo-256.png" alt="MargeUp" class="w-20 h-20 rounded-2xl shadow-lg shadow-orange-500/30"><span class="absolute -bottom-2 -right-2 w-8 h-8 rounded-full bg-orange-500 text-white flex items-center justify-center text-sm border-2 border-white"><i class="fa-solid fa-lock"></i></span></div>
+        <div class="relative w-20 h-20 mx-auto"><img src="images/logo-256.png" alt="MargeUp" class="w-20 h-20 rounded-2xl shadow-lg shadow-orange-500/30"><span class="absolute -bottom-2 -right-2 w-8 h-8 rounded-full bg-yellow-400 text-slate-950 font-bold flex items-center justify-center text-sm border-2 border-white"><i class="fa-solid fa-lock"></i></span></div>
         <h2 id="lock-title" class="text-xl font-black text-slate-900"></h2>
         <p id="lock-msg" class="text-xs text-slate-500"></p>
-        <button id="lock-btn" class="bg-orange-500 hover:bg-orange-600 text-white font-bold px-5 py-3 rounded-xl text-sm"></button>
+        <button id="lock-btn" class="bg-yellow-400 hover:bg-yellow-300 text-slate-950 font-bold font-bold px-5 py-3 rounded-xl text-sm"></button>
       </div>
     </section>
 
   </main>
 
-  <!-- PIED DE PAGE -->
-  <footer class="bg-white border-t border-slate-200 mt-8">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col md:flex-row items-center justify-between gap-4">
-      <div class="flex items-center space-x-3">
-        <img src="images/logo-256.png" alt="Logo MargeUp" width="36" height="36" class="w-9 h-9 rounded-lg">
+  <!-- PIED DE PAGE OFFICIEL MARGEUP -->
+  <footer class="bg-slate-950 text-slate-400 py-12 border-t border-slate-900 mt-12" data-purpose="site-footer">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
+        <!-- Col 1 -->
+        <div class="space-y-3 md:col-span-1">
+          <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-lg bg-yellow-400 flex items-center justify-center font-black text-slate-950 text-lg shadow-md shadow-yellow-400/20">
+              M
+            </div>
+            <span class="text-lg font-black tracking-tight text-white">Marge<span class="text-yellow-400">Up</span></span>
+          </div>
+          <p class="text-xs text-slate-400 leading-relaxed">
+            L'ERP nouvelle génération pour le BTP, le génie civil, les quincailleries et le transport au Sénégal.
+          </p>
+        </div>
+        <!-- Col 2 -->
         <div>
-          <div class="text-sm font-black text-slate-900">Marge<span class="text-orange-500">Up</span></div>
-          <div class="text-[11px] text-slate-500">Votre marge sous contrôle · BTP & Transport au Sénégal</div>
+          <p class="font-bold text-white mb-3 text-xs uppercase tracking-wider">Navigation</p>
+          <ul class="space-y-2 text-xs">
+            <li><a class="hover:text-yellow-400 transition-colors" href="#fonctionnalites">Fonctionnalités</a></li>
+            <li><a class="hover:text-yellow-400 transition-colors" href="#probleme">Défis du terrain</a></li>
+            <li><a class="hover:text-yellow-400 transition-colors" href="#temoignages">Témoignages</a></li>
+            <li><a class="hover:text-yellow-400 transition-colors" href="#tarification">Tarification</a></li>
+            <li><a class="hover:text-yellow-400 transition-colors" href="#connexion">Connexion ERP</a></li>
+          </ul>
+        </div>
+        <!-- Col 3 -->
+        <div>
+          <p class="font-bold text-white mb-3 text-xs uppercase tracking-wider">Légal &amp; Conformité</p>
+          <ul class="space-y-2 text-xs">
+            <li><button type="button" onclick="openLegalModal('mentions')" class="hover:text-yellow-400 transition-colors cursor-pointer text-left">Mentions Légales</button></li>
+            <li><button type="button" onclick="openLegalModal('confidentialite')" class="hover:text-yellow-400 transition-colors cursor-pointer text-left">Protection des Données (CDP Sénégal)</button></li>
+            <li><button type="button" onclick="openLegalModal('cgu')" class="hover:text-yellow-400 transition-colors cursor-pointer text-left">Conditions d’Utilisation (CGU)</button></li>
+          </ul>
+        </div>
+        <!-- Col 4 -->
+        <div>
+          <p class="font-bold text-white mb-3 text-xs uppercase tracking-wider">Contact &amp; Support</p>
+          <p class="text-xs text-slate-400 mb-1.5"><i class="fa-solid fa-location-dot text-yellow-400 mr-1.5"></i> Dakar, Sénégal</p>
+          <p class="text-xs text-yellow-400 font-medium mb-1.5"><i class="fa-solid fa-envelope mr-1.5"></i> margeup0@gmail.com</p>
+          <p class="text-xs text-emerald-400 font-medium"><i class="fa-brands fa-whatsapp mr-1.5"></i> +221 77 190 64 76</p>
         </div>
       </div>
-      <div class="flex flex-wrap items-center justify-center gap-3 text-xs text-slate-600 font-medium">
-        <button type="button" onclick="openLegalModal('mentions')" class="hover:text-orange-600 transition cursor-pointer">Mentions Légales</button>
-        <span class="text-slate-300">•</span>
-        <button type="button" onclick="openLegalModal('confidentialite')" class="hover:text-orange-600 transition cursor-pointer">Confidentialité & Données (CDP Sénégal)</button>
-        <span class="text-slate-300">•</span>
-        <button type="button" onclick="openLegalModal('cgu')" class="hover:text-orange-600 transition cursor-pointer">Conditions d’Utilisation (CGU)</button>
+      <div class="border-t border-slate-900 pt-6 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500">
+        <p>© <span id="footer-year">2026</span> MargeUp. Tous droits réservés.</p>
+        <p class="mt-2 sm:mt-0 font-medium text-slate-400">Conçu pour bâtir l’avenir du Sénégal &amp; de l’Afrique.</p>
       </div>
-      <div class="text-[11px] text-slate-500">© <span id="footer-year"></span> MargeUp. Tous droits réservés.</div>
     </div>
   </footer>
   <script>document.getElementById('footer-year').textContent = new Date().getFullYear();</script>

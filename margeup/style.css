@@ -1,13 +1,21 @@
-/* MargeUp - styles personnalisés (le reste vient de Tailwind) */
-/* Thème clair : fond blanc/gris très clair, textes foncés */
+/* MargeUp - Styles personnalisés & Design Industriel */
 :root { color-scheme: light; }
-body { font-family: 'Inter', sans-serif; }
+body { font-family: 'Plus Jakarta Sans', sans-serif; }
+
 .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
 .custom-scrollbar::-webkit-scrollbar-track { background: #F1F5F9; }
 .custom-scrollbar::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 4px; }
-.custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #FF6B00; }
+.custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #FACC15; }
 
-/* Impression du bon de sortie */
+/* Effets & Gradients de la Landing Page */
+.hero-glow {
+  background: radial-gradient(circle, rgba(250, 204, 21, 0.15) 0%, rgba(15, 23, 42, 0) 70%);
+}
+.industrial-gradient {
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+}
+
+/* Impression du bon de sortie et factures */
 @media print {
   body > *:not(#modal) { display: none !important; }
   #modal { position: static !important; background: #fff !important; }
@@ -18,5 +26,4 @@ body { font-family: 'Inter', sans-serif; }
 
 /* Logo : rendu net et sans déformation */
 img[src*="logo"] { object-fit: contain; }
-/* Le logo garde ses couleurs à l'impression */
 @media print { img[src*="logo"] { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
