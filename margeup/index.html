@@ -69,9 +69,7 @@
     <div id="header-landing" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
       <!-- Brand Logo -->
       <a class="flex items-center gap-3 group cursor-pointer" onclick="switchTab('accueil')">
-        <div class="w-10 h-10 rounded-lg bg-yellow-400 flex items-center justify-center font-extrabold text-slate-950 text-xl shadow-lg shadow-yellow-400/20 group-hover:scale-105 transition-transform">
-          M
-        </div>
+        <img src="images/logo.png" alt="MargeUp" class="w-10 h-10 rounded-lg shadow-md group-hover:scale-105 transition-transform object-contain bg-white/10 p-0.5" onerror="this.onerror=null;this.src='images/logo-256.png';">
         <div class="flex flex-col">
           <span class="text-xl font-extrabold tracking-tight text-white">Marge<span class="text-yellow-400">Up</span></span>
           <span class="text-[10px] uppercase tracking-widest text-slate-400 font-semibold">ERP BTP &amp; Transport · Sénégal</span>
@@ -89,11 +87,11 @@
 
       <!-- Action Buttons -->
       <div class="flex items-center gap-3">
-        <a href="#connexion" onclick="switchAuthTab('login')" class="text-slate-200 hover:text-yellow-400 text-xs sm:text-sm font-bold px-3 py-2 transition-colors cursor-pointer flex items-center gap-1.5">
+        <a href="javascript:void(0)" onclick="openAuthPhase('login')" class="text-slate-200 hover:text-yellow-400 text-xs sm:text-sm font-bold px-3 py-2 transition-colors cursor-pointer flex items-center gap-1.5">
           <i class="fa-solid fa-arrow-right-to-bracket text-yellow-400"></i>
           <span>Connexion</span>
         </a>
-        <a href="#connexion" onclick="switchAuthTab('signup')" class="inline-flex items-center justify-center px-4 sm:px-5 py-2.5 rounded-xl bg-yellow-400 text-slate-950 font-bold text-xs sm:text-sm shadow-md hover:bg-yellow-300 transition-all hover:shadow-yellow-400/20 cursor-pointer">
+        <a href="javascript:void(0)" onclick="openAuthPhase('signup')" class="inline-flex items-center justify-center px-4 sm:px-5 py-2.5 rounded-xl bg-yellow-400 text-slate-950 font-bold text-xs sm:text-sm shadow-md hover:bg-yellow-300 transition-all hover:shadow-yellow-400/20 cursor-pointer">
           Essai 15 jours gratuit
         </a>
       </div>
@@ -190,7 +188,7 @@
                 L’ERP tout-en-un taillé pour les entrepreneurs du BTP, du génie civil, du transport et des quincailleries au Sénégal. Finies les pertes sur les carburants et les stocks de matériaux.
               </p>
               <div class="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4 pt-2">
-                <a href="#connexion" onclick="switchAuthTab('signup')" class="w-full sm:w-auto px-8 py-4 rounded-xl bg-yellow-400 text-slate-950 font-extrabold text-sm sm:text-base shadow-lg hover:bg-yellow-300 transition-all text-center cursor-pointer shadow-yellow-400/20">
+                <a href="javascript:void(0)" onclick="openAuthPhase('signup')" class="w-full sm:w-auto px-8 py-4 rounded-xl bg-yellow-400 text-slate-950 font-extrabold text-sm sm:text-base shadow-lg hover:bg-yellow-300 transition-all text-center cursor-pointer shadow-yellow-400/20">
                   <i class="fa-solid fa-gift mr-1.5"></i> Démarrer mes 15 jours gratuits
                 </a>
                 <a href="#fonctionnalites" class="w-full sm:w-auto px-8 py-4 rounded-xl bg-slate-800 border border-slate-700 text-white font-semibold text-sm sm:text-base hover:bg-slate-700 transition-all text-center cursor-pointer">
@@ -227,50 +225,52 @@
                       <div class="w-3 h-3 rounded-full bg-yellow-500"></div>
                       <div class="w-3 h-3 rounded-full bg-emerald-500"></div>
                     </div>
-                    <span class="text-xs text-slate-400 font-mono">margeup.com · Tableau de bord CEO</span>
+                    <span class="text-xs text-slate-400 font-mono">margeup.com · Flotte & Chantiers Dakar</span>
                   </div>
-                  <!-- Mockup Content -->
+
+                  <!-- Photo Réelle des Camions & Engins de Chantier -->
+                  <div class="relative h-44 sm:h-52 w-full overflow-hidden border-b border-slate-800">
+                    <img src="images/engins.jpg" alt="Camions bennes, toupies et pelleteuses de chantier" class="w-full h-full object-cover object-center transform hover:scale-105 transition duration-500">
+                    <div class="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-transparent"></div>
+                    <div class="absolute bottom-2.5 left-3 right-3 flex items-center justify-between text-white text-xs">
+                      <span class="font-bold flex items-center gap-1.5 bg-slate-900/80 backdrop-blur px-2.5 py-1 rounded-lg border border-slate-700">
+                        <i class="fa-solid fa-truck-monster text-yellow-400"></i> Parc d'engins sous contrôle
+                      </span>
+                      <span class="bg-emerald-500/90 text-slate-950 font-extrabold text-[10px] px-2 py-0.5 rounded-full">
+                        Temps réel
+                      </span>
+                    </div>
+                  </div>
+
+                  <!-- Mockup Content KPIs -->
                   <div class="p-5 space-y-4">
                     <div class="grid grid-cols-2 gap-3">
-                      <div class="bg-slate-800/80 p-3.5 rounded-xl border border-slate-700/60">
+                      <div class="bg-slate-800/80 p-3 rounded-xl border border-slate-700/60">
                         <p class="text-[11px] text-slate-400 uppercase font-bold">Économie Carburant</p>
-                        <p class="text-lg font-black text-yellow-400 mt-1">+1 450 000 FCFA</p>
+                        <p class="text-base sm:text-lg font-black text-yellow-400 mt-0.5">+1 450 000 FCFA</p>
                         <p class="text-[10px] text-emerald-400 mt-0.5"><i class="fa-solid fa-arrow-trend-down"></i> Anti-siphonnage</p>
                       </div>
-                      <div class="bg-slate-800/80 p-3.5 rounded-xl border border-slate-700/60">
+                      <div class="bg-slate-800/80 p-3 rounded-xl border border-slate-700/60">
                         <p class="text-[11px] text-slate-400 uppercase font-bold">Chantiers Actifs</p>
-                        <p class="text-lg font-black text-white mt-1">4 en cours</p>
+                        <p class="text-base sm:text-lg font-black text-white mt-0.5">4 en cours</p>
                         <p class="text-[10px] text-yellow-400 mt-0.5"><i class="fa-solid fa-chart-pie"></i> Budgets sous contrôle</p>
                       </div>
                     </div>
-                    <div class="bg-slate-800/50 p-3.5 rounded-xl border border-slate-700/50 space-y-2">
-                      <div class="flex justify-between items-center text-xs">
-                        <span class="text-slate-300 font-medium">Stock Ciment Dangote (Dépôt)</span>
-                        <span class="font-bold text-yellow-400">24 t (480 sacs)</span>
-                      </div>
-                      <div class="w-full bg-slate-700 rounded-full h-2 overflow-hidden">
-                        <div class="bg-yellow-400 h-2 rounded-full" style="width: 75%"></div>
-                      </div>
-                      <div class="flex justify-between items-center text-[10px] text-slate-400">
-                        <span>Seuil d'alerte : 5 t</span>
-                        <span class="text-emerald-400 font-bold">Stock optimal</span>
-                      </div>
-                    </div>
-                    <a href="#connexion" onclick="switchAuthTab('login')" class="w-full bg-yellow-400 hover:bg-yellow-300 text-slate-950 font-bold py-2.5 rounded-xl text-xs transition cursor-pointer flex items-center justify-center gap-1.5 shadow-md">
+                    <button type="button" onclick="openAuthPhase('login')" class="w-full bg-yellow-400 hover:bg-yellow-300 text-slate-950 font-bold py-2.5 rounded-xl text-xs transition cursor-pointer flex items-center justify-center gap-1.5 shadow-md">
                       <i class="fa-solid fa-lock-open text-xs"></i>
-                      <span>Accéder à l'ERP complet</span>
-                    </a>
+                      <span>Accéder à la plateforme</span>
+                    </button>
                   </div>
                 </div>
               </div>
             </div>
-
           </div>
         </div>
       </div>
 
       <!-- 2. SECTION PROBLÈMES DU TERRAIN (#probleme) -->
-      <section id="probleme" class="space-y-8 pt-4">
+      <section id="probleme" class="relative space-y-8 pt-4">
+        <div class="flex justify-end mb-2"><a href="#view-accueil" onclick="window.scrollTo({top:0,behavior:'smooth'})" class="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-yellow-600 bg-white/80 hover:bg-white border border-slate-200 px-3 py-1.5 rounded-xl shadow-xs transition float-right ml-auto"><i class="fa-solid fa-arrow-up"></i> <span>Haut / Retour</span></a></div>
         <div class="text-center max-w-3xl mx-auto space-y-3">
           <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 text-amber-600 text-xs font-bold uppercase tracking-wider border border-amber-500/20">
             Les défis du terrain
@@ -324,7 +324,8 @@
       </section>
 
       <!-- 3. SECTION FONCTIONNALITÉS COMPLÈTES (#fonctionnalites) -->
-      <section id="fonctionnalites" class="space-y-8 pt-6">
+      <section id="fonctionnalites" class="relative space-y-8 pt-6">
+        <div class="flex justify-end mb-2"><a href="#view-accueil" onclick="window.scrollTo({top:0,behavior:'smooth'})" class="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-yellow-600 bg-white/80 hover:bg-white border border-slate-200 px-3 py-1.5 rounded-xl shadow-xs transition float-right ml-auto"><i class="fa-solid fa-arrow-up"></i> <span>Haut / Retour</span></a></div>
         <div class="text-center max-w-3xl mx-auto space-y-3">
           <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-900 text-yellow-400 text-xs font-bold uppercase tracking-wider">
             Solution Complète
@@ -387,7 +388,8 @@
       </section>
 
       <!-- 4. COMMENT ÇA MARCHE (#comment-ca-marche) -->
-      <section id="comment-ca-marche" class="space-y-8 pt-6">
+      <section id="comment-ca-marche" class="relative space-y-8 pt-6">
+        <div class="flex justify-end mb-2"><a href="#view-accueil" onclick="window.scrollTo({top:0,behavior:'smooth'})" class="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-yellow-600 bg-white/80 hover:bg-white border border-slate-200 px-3 py-1.5 rounded-xl shadow-xs transition float-right ml-auto"><i class="fa-solid fa-arrow-up"></i> <span>Haut / Retour</span></a></div>
         <div class="text-center max-w-3xl mx-auto space-y-3">
           <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 text-amber-700 text-xs font-bold uppercase tracking-wider">
             Processus simple
@@ -428,7 +430,8 @@
       </section>
 
       <!-- 5. TÉMOIGNAGES DU TERRAIN (#temoignages) -->
-      <section id="temoignages" class="space-y-6 pt-6">
+      <section id="temoignages" class="relative space-y-6 pt-6">
+        <div class="flex justify-end mb-2"><a href="#view-accueil" onclick="window.scrollTo({top:0,behavior:'smooth'})" class="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-yellow-600 bg-white/80 hover:bg-white border border-slate-200 px-3 py-1.5 rounded-xl shadow-xs transition float-right ml-auto"><i class="fa-solid fa-arrow-up"></i> <span>Haut / Retour</span></a></div>
         <div class="flex flex-col md:flex-row md:items-end justify-between gap-4">
           <div>
             <div class="inline-flex items-center space-x-1.5 bg-yellow-400/20 text-slate-900 border border-yellow-400/40 px-3 py-1 rounded-full text-xs font-bold mb-2">
@@ -450,7 +453,8 @@
       </section>
 
       <!-- 6. TARIFICATION INTERACTIVE (#tarification) -->
-      <section id="tarification" class="space-y-8 pt-6">
+      <section id="tarification" class="relative space-y-8 pt-6">
+        <div class="flex justify-end mb-2"><a href="#view-accueil" onclick="window.scrollTo({top:0,behavior:'smooth'})" class="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-yellow-600 bg-white/80 hover:bg-white border border-slate-200 px-3 py-1.5 rounded-xl shadow-xs transition float-right ml-auto"><i class="fa-solid fa-arrow-up"></i> <span>Haut / Retour</span></a></div>
         <div class="text-center max-w-3xl mx-auto space-y-3">
           <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-700 text-xs font-bold uppercase tracking-wider border border-emerald-500/20">
             Tarification claire &amp; adaptée
@@ -634,132 +638,141 @@
         </div>
       </section>
 
-      <!-- 7. PORTAIL DE CONNEXION & INSCRIPTION RÉELLE (#connexion) -->
-      <section id="connexion" class="pt-6">
-        <div class="max-w-2xl mx-auto bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-10 text-white shadow-2xl relative overflow-hidden">
-          <div class="absolute -right-16 -top-16 w-60 h-60 bg-yellow-400/10 rounded-full blur-3xl pointer-events-none"></div>
+      
 
-          <!-- Entête du portail -->
-          <div class="text-center space-y-2 mb-8 relative z-10">
-            <div class="inline-flex items-center gap-1.5 bg-yellow-400/10 text-yellow-400 border border-yellow-400/30 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider">
-              <i class="fa-solid fa-shield-halved"></i>
-              <span>Accès Espace Sécurisé</span>
-            </div>
-            <h2 class="text-2xl sm:text-3xl font-black text-white">
-              Passez à l'action avec MargeUp
-            </h2>
-            <p class="text-xs text-slate-400">
-              Connectez-vous avec vos identifiants réels ou créez votre entreprise pour 15 jours d'essai gratuit.
-            </p>
+      <!-- 8. BANDEAU DE CONTACT RETIRE (ESPACE NETTOYE) -->
 
-            <!-- Deux onglets : Connexion vs Inscription -->
-            <div class="flex items-center justify-center p-1 bg-slate-950 border border-slate-800 rounded-2xl max-w-sm mx-auto mt-4">
-              <button id="tab-btn-login" type="button" onclick="switchAuthTab('login')" class="flex-1 py-2 rounded-xl text-xs font-bold transition bg-yellow-400 text-slate-950 cursor-pointer">
-                Connexion
-              </button>
-              <button id="tab-btn-signup" type="button" onclick="switchAuthTab('signup')" class="flex-1 py-2 rounded-xl text-xs font-bold transition text-slate-400 hover:text-white cursor-pointer">
-                Créer mon espace (15j)
-              </button>
+    </section>
+
+    <!-- ==================== SECTION 2: PHASE D'ACCÈS SÉPARÉE (CONNEXION & INSCRIPTION) ==================== -->
+    <section id="view-auth" class="hidden min-h-[80vh] flex flex-col justify-center items-center py-8">
+      
+      <!-- Bouton de retour vers la Landing Page -->
+      <div class="w-full max-w-2xl mb-4 flex items-center justify-between">
+        <button type="button" onclick="closeAuthPhase()" class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-slate-300 text-slate-700 hover:text-slate-950 hover:bg-slate-50 font-bold text-xs shadow-xs transition cursor-pointer">
+          <i class="fa-solid fa-arrow-left text-yellow-500"></i>
+          <span>Retour à la présentation du site</span>
+        </button>
+        <span class="text-xs text-slate-500 font-medium">Espace sécurisé MargeUp</span>
+      </div>
+
+      <div class="w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-10 text-white shadow-2xl relative overflow-hidden">
+        <div class="absolute -right-16 -top-16 w-60 h-60 bg-yellow-400/10 rounded-full blur-3xl pointer-events-none"></div>
+
+        <!-- Entête du portail -->
+        <div class="text-center space-y-2 mb-8 relative z-10">
+          <div class="inline-flex items-center gap-2 bg-yellow-400/10 text-yellow-400 border border-yellow-400/30 px-3.5 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider">
+            <i class="fa-solid fa-shield-halved"></i>
+            <span>Accès Espace Sécurisé</span>
+          </div>
+          <h2 class="text-2xl sm:text-3xl font-black text-white">
+            Passez à l'action avec MargeUp
+          </h2>
+          <p class="text-xs text-slate-400">
+            Connectez-vous avec vos identifiants réels ou créez votre entreprise pour 15 jours d'essai gratuit.
+          </p>
+
+          <!-- Deux onglets : Connexion vs Inscription -->
+          <div class="flex items-center justify-center p-1 bg-slate-950 border border-slate-800 rounded-2xl max-w-sm mx-auto mt-4">
+            <button id="tab-btn-login" type="button" onclick="switchAuthTab('login')" class="flex-1 py-2 rounded-xl text-xs font-bold transition bg-yellow-400 text-slate-950 cursor-pointer">
+              Connexion
+            </button>
+            <button id="tab-btn-signup" type="button" onclick="switchAuthTab('signup')" class="flex-1 py-2 rounded-xl text-xs font-bold transition text-slate-400 hover:text-white cursor-pointer">
+              Créer mon espace (15j)
+            </button>
+          </div>
+        </div>
+
+        <!-- FORMULAIRE 1 : CONNEXION DIRECTE -->
+        <form id="form-auth-login" onsubmit="handleDirectLogin(event)" class="space-y-4 relative z-10">
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1">
+              E-mail ou Numéro de téléphone réel *
+            </label>
+            <div class="relative">
+              <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500 text-xs">
+                <i class="fa-solid fa-user"></i>
+              </span>
+              <input id="login-identifier" type="text" required placeholder="Ex. 77 123 45 67 ou patron@entreprise.sn" class="w-full bg-slate-950 border border-slate-700 rounded-xl pl-9 pr-3 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-yellow-400 focus:ring-1 focus:ring-yellow-400">
             </div>
           </div>
 
-          <!-- FORMULAIRE 1 : CONNEXION DIRECTE PAR E-MAIL OU TÉLÉPHONE -->
-          <form id="form-auth-login" onsubmit="handleDirectLogin(event)" class="space-y-4 relative z-10">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label class="block text-xs font-semibold text-slate-300 mb-1">
-                E-mail ou Numéro de téléphone réel *
+                Accès Profil / Rôle *
               </label>
-              <div class="relative">
-                <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500 text-xs">
-                  <i class="fa-solid fa-user"></i>
-                </span>
-                <input id="login-identifier" type="text" required placeholder="Ex. 77 123 45 67 ou patron@entreprise.sn" class="w-full bg-slate-950 border border-slate-700 rounded-xl pl-9 pr-3 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-yellow-400 focus:ring-1 focus:ring-yellow-400">
-              </div>
+              <select id="login-role" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-yellow-400 font-bold focus:outline-none focus:border-yellow-400">
+                <option value="ceo">Direction (CEO / Gérant)</option>
+                <option value="magasinier">Pass Magasinier (Quincaillerie)</option>
+                <option value="transport">Pass Transport (Flotte &amp; Pannes)</option>
+              </select>
             </div>
-
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label class="block text-xs font-semibold text-slate-300 mb-1">
-                  Accès Profil / Rôle *
-                </label>
-                <select id="login-role" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-yellow-400 font-bold focus:outline-none focus:border-yellow-400">
-                  <option value="ceo">Direction (CEO / Gérant)</option>
-                  <option value="magasinier">Pass Magasinier (Quincaillerie)</option>
-                  <option value="transport">Pass Transport (Flotte &amp; Pannes)</option>
-                </select>
-              </div>
-              <div>
-                <label class="block text-xs font-semibold text-slate-300 mb-1">
-                  Mot de passe *
-                </label>
-                <input id="login-password" type="password" required placeholder="••••••••" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-yellow-400">
-              </div>
-            </div>
-
-            <div id="login-error" class="text-xs text-rose-400 text-center font-semibold min-h-[16px]"></div>
-
-            <button type="submit" class="w-full py-3.5 rounded-xl bg-yellow-400 text-slate-950 font-black text-xs hover:bg-yellow-300 transition shadow-lg shadow-yellow-400/20 cursor-pointer flex items-center justify-center gap-2">
-              <span>Entrer dans mon espace ERP</span>
-              <i class="fa-solid fa-arrow-right"></i>
-            </button>
-            <p class="text-[11px] text-center text-slate-400 pt-1">
-              Pas encore de compte ? <a onclick="switchAuthTab('signup')" class="text-yellow-400 underline font-bold cursor-pointer">Démarrer 15 jours d'essai gratuit</a>
-            </p>
-          </form>
-
-          <!-- FORMULAIRE 2 : INSCRIPTION RÉELLE & ESSAI 15 JOURS -->
-          <form id="form-auth-signup" onsubmit="handleDirectSignup(event)" class="space-y-4 relative z-10 hidden">
             <div>
-              <label class="block text-xs font-semibold text-slate-300 mb-1">Nom de votre entreprise *</label>
-              <input id="signup-nom" type="text" required placeholder="Ex. Touba BTP &amp; Transport SARL" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-yellow-400">
+              <label class="block text-xs font-semibold text-slate-300 mb-1">
+                Mot de passe *
+              </label>
+              <input id="login-password" type="password" required placeholder="••••••••" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-yellow-400">
             </div>
+          </div>
 
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label class="block text-xs font-semibold text-slate-300 mb-1">Nom du gérant (Patron) *</label>
-                <input id="signup-resp" type="text" required placeholder="Ex. Moussa Ndiaye" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-yellow-400">
-              </div>
-              <div>
-                <label class="block text-xs font-semibold text-slate-300 mb-1">Ville d'implantation *</label>
-                <input id="signup-ville" type="text" required placeholder="Ex. Dakar, Thiès, Diamniadio" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-yellow-400">
-              </div>
-            </div>
+          <div id="login-error" class="text-xs text-rose-400 text-center font-semibold min-h-[16px]"></div>
 
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label class="block text-xs font-semibold text-slate-300 mb-1">Téléphone réel (WhatsApp) *</label>
-                <input id="signup-tel" type="tel" required minlength="9" placeholder="77 000 00 00" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-yellow-400">
-              </div>
-              <div>
-                <label class="block text-xs font-semibold text-slate-300 mb-1">E-mail réel de l'entreprise *</label>
-                <input id="signup-email" type="email" required placeholder="contact@entreprise.sn" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-yellow-400">
-              </div>
-            </div>
+          <button type="submit" class="w-full py-3.5 rounded-xl bg-yellow-400 text-slate-950 font-black text-xs hover:bg-yellow-300 transition shadow-lg shadow-yellow-400/20 cursor-pointer flex items-center justify-center gap-2">
+            <span>Entrer dans mon espace ERP</span>
+            <i class="fa-solid fa-arrow-right"></i>
+          </button>
+          <p class="text-[11px] text-center text-slate-400 pt-1">
+            Pas encore de compte ? <a onclick="switchAuthTab('signup')" class="text-yellow-400 underline font-bold cursor-pointer">Démarrer 15 jours d'essai gratuit</a>
+          </p>
+        </form>
 
+        <!-- FORMULAIRE 2 : INSCRIPTION RÉELLE & ESSAI 15 JOURS -->
+        <form id="form-auth-signup" onsubmit="handleDirectSignup(event)" class="space-y-4 relative z-10 hidden">
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1">Nom de votre entreprise *</label>
+            <input id="signup-nom" type="text" required placeholder="Ex. Touba BTP &amp; Transport SARL" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-yellow-400">
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label class="block text-xs font-semibold text-slate-300 mb-1">Mot de passe pour l'espace Direction *</label>
-              <input id="signup-pw" type="password" required minlength="4" placeholder="Minimum 4 caractères" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-yellow-400">
+              <label class="block text-xs font-semibold text-slate-300 mb-1">Nom du gérant (Patron) *</label>
+              <input id="signup-resp" type="text" required placeholder="Ex. Moussa Ndiaye" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-yellow-400">
             </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-300 mb-1">Ville d'implantation *</label>
+              <input id="signup-ville" type="text" required placeholder="Ex. Dakar, Thiès, Diamniadio" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-yellow-400">
+            </div>
+          </div>
 
-            <div id="signup-error" class="text-xs text-rose-400 text-center font-semibold min-h-[16px]"></div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-semibold text-slate-300 mb-1">Téléphone réel (WhatsApp) *</label>
+              <input id="signup-tel" type="tel" required minlength="9" placeholder="77 000 00 00" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-yellow-400">
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-300 mb-1">E-mail réel de l'entreprise *</label>
+              <input id="signup-email" type="email" required placeholder="contact@entreprise.sn" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-yellow-400">
+            </div>
+          </div>
 
-            <button type="submit" class="w-full py-3.5 rounded-xl bg-yellow-400 text-slate-950 font-black text-xs hover:bg-yellow-300 transition shadow-lg shadow-yellow-400/20 cursor-pointer flex items-center justify-center gap-2">
-              <i class="fa-solid fa-gift"></i>
-              <span>Activer mon essai gratuit de 15 jours</span>
-            </button>
-            <p class="text-[11px] text-center text-slate-400 pt-1">
-              Vous avez déjà un compte ? <a onclick="switchAuthTab('login')" class="text-yellow-400 underline font-bold cursor-pointer">Se connecter directement</a>
-            </p>
-          </form>
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1">Mot de passe pour l'espace Direction *</label>
+            <input id="signup-pw" type="password" required minlength="4" placeholder="Minimum 4 caractères" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-yellow-400">
+          </div>
 
-        </div>
-      </section>
+          <div id="signup-error" class="text-xs text-rose-400 text-center font-semibold min-h-[16px]"></div>
 
-      <!-- 8. BANDEAU DE CONTACT DÉDIÉ (DAKAR / SÉNÉGAL) -->
-      <div id="contact-box" class="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl">
-        <!-- Rendu dynamique par renderContact() -->
+          <button type="submit" class="w-full py-3.5 rounded-xl bg-yellow-400 text-slate-950 font-black text-xs hover:bg-yellow-300 transition shadow-lg shadow-yellow-400/20 cursor-pointer flex items-center justify-center gap-2">
+            <i class="fa-solid fa-gift"></i>
+            <span>Créer mon entreprise et entrer dans l'ERP</span>
+          </button>
+          <p class="text-[11px] text-center text-slate-400 pt-1">
+            Vous avez déjà un compte ? <a onclick="switchAuthTab('login')" class="text-yellow-400 underline font-bold cursor-pointer">Se connecter directement</a>
+          </p>
+        </form>
+
       </div>
-
     </section>
 
     <!-- ==================== SECTION 3: TABLEAU DE BORD CEO ==================== -->
@@ -1131,7 +1144,7 @@
             <li><a class="hover:text-yellow-400 transition-colors" href="#probleme">Défis du terrain</a></li>
             <li><a class="hover:text-yellow-400 transition-colors" href="#temoignages">Témoignages</a></li>
             <li><a class="hover:text-yellow-400 transition-colors" href="#tarification">Tarification</a></li>
-            <li><a class="hover:text-yellow-400 transition-colors" href="#connexion">Connexion ERP</a></li>
+            <li><a class="hover:text-yellow-400 transition-colors" href="javascript:void(0)" onclick="openAuthPhase('login')">Connexion ERP</a></li>
           </ul>
         </div>
         <!-- Col 3 -->

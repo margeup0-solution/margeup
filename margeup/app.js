@@ -2431,7 +2431,7 @@ function handleDirectSignup(e) {
   const pw = ($('signup-pw')?.value || '').trim();
   const errBox = ($('signup-error'));
 
-  if (!nom || !resp || !/\S+@\S+\.\S+/.test(email) || tel.replace(/\D/g, '').length < 9) {
+  if (!nom || !resp || !email.includes('@') || tel.replace(/\D/g, '').length < 9) {
     if (errBox) errBox.textContent = 'Nom d’entreprise, responsable, e-mail et téléphone valides (min. 9 chiffres) sont obligatoires.';
     return;
   }
@@ -2440,19 +2440,39 @@ function handleDirectSignup(e) {
     return;
   }
 
-  pendingCompanyData = {
-    id: (S.co && S.co.id) || uid(),
+  // Création et initialisation automatique de l'entreprise
+  const coId = (S.co && S.co.id) || uid();
+  S.co = {
+    id: coId,
     nom,
     resp,
     email,
     tel,
     ville,
+    emailVerified: true,
     since: day()
   };
 
-  sendVerificationEmail(email);
-  openVerificationModal();
-  toast('Code de vérification généré : ' + verificationCode);
+  // Enregistrement du mot de passe direction (CEO)
+  S.roles = S.roles || {};
+  S.roles['ceo'] = hashPw(pw, coId);
+
+  // Activation de la période d'essai de 15 jours
+  if (!S.trial && !S.sub) {
+    S.trial = { start: day(), end: addDays(day(), TRIAL_DAYS) };
+  }
+
+  save();
+
+  // Masquer la vue d'authentification et entrer directement dans l'ERP
+  const vAuth = $('view-auth');
+  if (vAuth) vAuth.classList.add('hidden');
+
+  enterRole('ceo');
+  updateHeaderMode('erp');
+  switchTab('ceo');
+
+  toast('🎉 Félicitations ' + resp + ' ! Votre entreprise ' + nom + ' est créée et votre espace Direction est activé.');
 }
 
 function updateHeaderMode(mode) {
