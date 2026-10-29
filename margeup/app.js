@@ -550,6 +550,25 @@ function fillLock() {
   $('lock-btn').textContent = a === 'none' ? 'Démarrer mon essai gratuit' : 'S’abonner maintenant';
 }
 
+/* ---------- RESTRICTION DES FONCTIONNALITÉS SELON LE PLAN CHOISI ---------- */
+function applyPlanRestrictions() {
+  const plan = (S.sub && S.sub.plan) || (S.trial && S.trial.plan) || (S.co && S.co.plan) || 'all';
+  const tabMagasinier = $('tab-magasinier');
+  const tabTransport = $('tab-transport');
+
+  if (plan === 'b2c_retail' || plan === 'hybrid_b2b_b2c' || plan === 'quincaillerie') {
+    if (tabTransport) tabTransport.classList.add('hidden');
+    if (tabMagasinier && (curRole === 'ceo' || curRole === 'magasinier')) tabMagasinier.classList.remove('hidden');
+  } else if (plan === 'fleet' || plan === 'fleet_custom' || plan === 'transport') {
+    if (tabMagasinier) tabMagasinier.classList.add('hidden');
+    if (tabTransport && (curRole === 'ceo' || curRole === 'transport')) tabTransport.classList.remove('hidden');
+  } else {
+    // Pack tout-en-un / All
+    if (tabMagasinier && (curRole === 'ceo' || curRole === 'magasinier')) tabMagasinier.classList.remove('hidden');
+    if (tabTransport && (curRole === 'ceo' || curRole === 'transport')) tabTransport.classList.remove('hidden');
+  }
+}
+
 /* ---------- NAVIGATION ET RÔLES ---------- */
 function switchTab(tabId) {
   if (tabId === 'tarifs' && S.co && curRole !== 'ceo') { toast('Les tarifs sont réservés au patron (rôle CEO).'); return; }
@@ -566,6 +585,9 @@ function switchTab(tabId) {
   } else {
     updateHeaderMode('erp');
   }
+
+  // Appliquer les restrictions de plan aux onglets visibles
+  applyPlanRestrictions();
 
   // Style des boutons d'onglets ERP
   document.querySelectorAll('.nav-tab').forEach(b => {
@@ -584,6 +606,7 @@ function changeRole(role) {
   document.querySelectorAll('.role-restricted').forEach(b => b.classList.toggle('hidden', !(role === 'ceo' || b.classList.contains('role-' + role))));
   const employe = !!S.co && role !== 'ceo'; // les tarifs sont réservés au patron (les visiteurs les voient)
   document.querySelectorAll('.ceo-only').forEach(b => b.classList.toggle('hidden', employe));
+  applyPlanRestrictions();
   const cur = document.querySelector('main > section:not(.hidden)');
   if (cur && (employe && cur.id === 'view-tarifs' || !['view-accueil', 'view-tarifs', 'view-partenaires'].includes(cur.id))) switchTab(role === 'ceo' || employe && cur.id === 'view-tarifs' ? 'accueil' : role);
 }
@@ -621,10 +644,20 @@ function generateVerificationCode() {
   return String(Math.floor(100000 + Math.random() * 900000));
 }
 
-function sendVerificationEmail(email) {
+async function sendVerificationEmail(email) {
   verificationCode = generateVerificationCode();
   verificationExpiry = Date.now() + 15 * 60 * 1000; // Valide 15 minutes
   if (typeof window !== 'undefined') window.verificationCode = verificationCode;
+
+  const sb = getSupabase();
+  if (sb && email && email.includes('@')) {
+    try {
+      await sb.auth.signInWithOtp({ email });
+      console.log('[MargeUp Auth] E-mail de vérification envoyé avec succès via Supabase à', email);
+    } catch (err) {
+      console.warn('[MargeUp Auth] Supabase OTP fallback:', err.message || err);
+    }
+  }
   console.log(`[MargeUp Auth] Code de vérification généré pour ${email} : ${verificationCode}`);
   return verificationCode;
 }
@@ -843,6 +876,11 @@ function updatePricingCalculator() {
 }
 
 function chooseQuincPack(planCode, basePrice, planLabel) {
+  if (!S.co) {
+    openAuthPhase('signup', planCode);
+    toast('Démarrez votre essai gratuit de 15 jours sur l’offre ' + planLabel + ' !');
+    return;
+  }
   const isAnn = billingCycle === 'annual';
   const type = planCode === 'b2c_retail' ? 'b2c' : 'hybrid';
   const qty = quincQty[type] || 1;
@@ -906,6 +944,11 @@ function chooseQuincPack(planCode, basePrice, planLabel) {
 }
 
 function chooseTruckPack() {
+  if (!S.co) {
+    openAuthPhase('signup', 'fleet_custom');
+    toast('Démarrez votre essai gratuit de 15 jours sur l’offre Flotte (' + selectedTrucksCount + ' camion' + (selectedTrucksCount > 1 ? 's' : '') + ') !');
+    return;
+  }
   const isAnn = billingCycle === 'annual';
   const unit = PACK_PRICES.truck;
   const monthlyTotal = unit * selectedTrucksCount;
@@ -2238,7 +2281,7 @@ document.addEventListener('submit', e => { const f = e.target.dataset && e.targe
 window.onload = async function () {
   try { const r = sessionStorage.getItem('safebtp.role'), mu = S.team.find(m => m.id === sessionStorage.getItem('safebtp.user')); if (r && r !== 'ceo' && ((mu && mu.role === r) || !S.co)) { curRole = r; curUser = mu || null; } } catch (e) {}
   $('roleSelector').value = curRole;
-  changeRole(curRole); updatePricingCalculator(); renderAll();
+  changeRole(curRole); updatePricingCalculator(); renderAll(); applyPlanRestrictions();
   // Accès maintenance désactivé
   // Restauration d'arrière-plan résiliente depuis IndexedDB
   await syncFromIndexedDB();
@@ -2364,6 +2407,26 @@ function openLegalModal(type) {
 }
 
 /* ---------- PORTAIL DE CONNEXION / INSCRIPTION DIRECTE (LANDING ➔ ERP) ---------- */
+function openAuthPhase(mode = 'login', plan = '') {
+  document.querySelectorAll('main > section').forEach(s => s.classList.add('hidden'));
+  const vAuth = $('view-auth');
+  if (vAuth) {
+    vAuth.classList.remove('hidden');
+  }
+  switchAuthTab(mode);
+  if (plan && $('signup-plan')) {
+    $('signup-plan').value = plan;
+  }
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function closeAuthPhase() {
+  const vAuth = $('view-auth');
+  if (vAuth) vAuth.classList.add('hidden');
+  switchTab(S.co ? (curRole || 'ceo') : 'accueil');
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
 function switchAuthTab(mode) {
   const btnLogin = $('tab-btn-login');
   const btnSignup = $('tab-btn-signup');
@@ -2405,19 +2468,25 @@ function handleDirectLogin(e) {
       email: ident.includes('@') ? ident.toLowerCase() : 'contact@margeup.sn',
       tel: ident.replace(/\D/g, '').length >= 9 ? ident : '77 123 45 67',
       ville: 'Dakar',
+      plan: 'all',
       emailVerified: true,
       since: day()
     };
     if (!S.trial && !S.sub) {
-      S.trial = { start: day(), end: addDays(day(), TRIAL_DAYS) };
+      S.trial = { start: day(), end: addDays(day(), TRIAL_DAYS), plan: 'all' };
     }
     save();
   }
 
   if (errBox) errBox.textContent = '';
+  
+  const vAuth = $('view-auth');
+  if (vAuth) vAuth.classList.add('hidden');
+
   enterRole(role);
   updateHeaderMode('erp');
   switchTab(role);
+  applyPlanRestrictions();
   toast('Connexion réussie · Espace ' + (ROLE_LABEL[role] || role) + ' ouvert !');
 }
 
@@ -2429,6 +2498,7 @@ function handleDirectSignup(e) {
   const tel = ($('signup-tel')?.value || '').trim();
   const email = ($('signup-email')?.value || '').trim().toLowerCase();
   const pw = ($('signup-pw')?.value || '').trim();
+  const plan = ($('signup-plan')?.value || 'all');
   const errBox = ($('signup-error'));
 
   if (!nom || !resp || !email.includes('@') || tel.replace(/\D/g, '').length < 9) {
@@ -2449,6 +2519,7 @@ function handleDirectSignup(e) {
     email,
     tel,
     ville,
+    plan,
     emailVerified: true,
     since: day()
   };
@@ -2457,10 +2528,8 @@ function handleDirectSignup(e) {
   S.roles = S.roles || {};
   S.roles['ceo'] = hashPw(pw, coId);
 
-  // Activation de la période d'essai de 15 jours
-  if (!S.trial && !S.sub) {
-    S.trial = { start: day(), end: addDays(day(), TRIAL_DAYS) };
-  }
+  // Activation de la période d'essai de 15 jours liée à la formule choisie
+  S.trial = { start: day(), end: addDays(day(), TRIAL_DAYS), plan: plan };
 
   save();
 
@@ -2471,6 +2540,7 @@ function handleDirectSignup(e) {
   enterRole('ceo');
   updateHeaderMode('erp');
   switchTab('ceo');
+  applyPlanRestrictions();
 
   toast('🎉 Félicitations ' + resp + ' ! Votre entreprise ' + nom + ' est créée et votre espace Direction est activé.');
 }
