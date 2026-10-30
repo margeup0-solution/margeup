@@ -1261,9 +1261,9 @@ function batTime(b) {
 }
 function renderChantiers() {
   const sl = $('selectedChantierFilter');
-  if (!scopeChantiers().length) { sl.innerHTML = '<option>Aucun chantier</option>'; selChantier = null; } else {
+  if (!scopeChantiers().length) { if (sl) sl.innerHTML = '<option>Aucun chantier</option>'; selChantier = null; } else {
     if (!scopeChantiers().find(c => c.id === selChantier)) selChantier = scopeChantiers()[0].id;
-    sl.innerHTML = scopeChantiers().map(c => `<option value="${esc(c.id)}" ${c.id === selChantier ? 'selected' : ''}>${esc(c.nom)}</option>`).join('');
+    if (sl) sl.innerHTML = scopeChantiers().map(c => `<option value="${esc(c.id)}" ${c.id === selChantier ? 'selected' : ''}>${esc(c.nom)}</option>`).join('');
   }
   const c = S.chantiers.find(x => x.id === selChantier);
   const L = S.expenses.filter(e => e.chantier === selChantier);
@@ -1747,6 +1747,23 @@ function clearDemo() {
   Object.assign(S, { demo: false, inventory: [], sales: [], pannes: [], expenses: [], fleet: [], chantiers: [], batiments: [], seq: 0 }); save(); renderAll();
 }
 function renderAll() {
+  const coBtn = $('coBtn');
+  if (coBtn) {
+    coBtn.innerHTML = `<i class="fa-solid fa-building text-orange-600"></i> ${esc(S.co ? S.co.nom : 'Créer mon espace')}`;
+  }
+  updateSyncIndicator();
+  try { renderBanner(); } catch (e) { console.warn('renderBanner', e); }
+  try { renderDemoBar(); } catch (e) { console.warn('renderDemoBar', e); }
+  try { renderInventory(); } catch (e) { console.warn('renderInventory', e); }
+  try { renderPannes(); } catch (e) { console.warn('renderPannes', e); }
+  try { renderFleet(); } catch (e) { console.warn('renderFleet', e); }
+  try { renderTripsJournal(); } catch (e) { console.warn('renderTripsJournal', e); }
+  try { renderDrivers(); } catch (e) { console.warn('renderDrivers', e); }
+  try { renderChantiers(); } catch (e) { console.warn('renderChantiers', e); }
+  try { renderCeo(); } catch (e) { console.warn('renderCeo', e); }
+  try { renderContact(); } catch (e) { console.warn('renderContact', e); }
+  try { renderReviews(); } catch (e) { console.warn('renderReviews', e); }
+}
   $('coBtn').innerHTML = '<i class="fa-solid fa-building text-orange-600"></i> ' + esc(S.co ? S.co.nom : 'Créer mon espace');
   updateSyncIndicator(); renderBanner(); renderDemoBar(); renderInventory(); renderPannes(); renderFleet(); renderTripsJournal(); renderDrivers(); renderChantiers(); renderCeo(); renderContact(); renderReviews();
 }
