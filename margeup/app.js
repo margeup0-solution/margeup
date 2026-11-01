@@ -1260,6 +1260,7 @@ function batTime(b) {
   return { leftTxt, leftBad, proj, projTxt, warn, late };
 }
 function renderChantiers() {
+  if (!$('batiments-grid') || !$('expenses-table-body') || !$('budget-box')) return; // section Chantiers retirée de la page
   const sl = $('selectedChantierFilter');
   if (!scopeChantiers().length) { if (sl) sl.innerHTML = '<option>Aucun chantier</option>'; selChantier = null; } else {
     if (!scopeChantiers().find(c => c.id === selChantier)) selChantier = scopeChantiers()[0].id;
@@ -1326,7 +1327,7 @@ function openBatUpdate(id) {
     '<div class="flex justify-end gap-2 pt-2"><button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl text-xs bg-slate-100 text-slate-600">Annuler</button><button class="px-4 py-2 rounded-xl text-xs bg-yellow-400 text-slate-950 font-bold">Enregistrer</button></div></form>');
 }
 function delBat(id) { if (!confirm('Retirer ce bâtiment ?')) return; S.batiments = S.batiments.filter(b => b.id !== id); save(); renderAll(); }
-function renderChantierExpenses() { selChantier = $('selectedChantierFilter').value; renderChantiers(); }
+function renderChantierExpenses() { const f = $('selectedChantierFilter'); if (!f) return; selChantier = f.value; renderChantiers(); }
 
 /* ---------- TABLEAU DE BORD CEO ---------- */
 function renderCeo() {
@@ -1763,9 +1764,6 @@ function renderAll() {
   try { renderCeo(); } catch (e) { console.warn('renderCeo', e); }
   try { renderContact(); } catch (e) { console.warn('renderContact', e); }
   try { renderReviews(); } catch (e) { console.warn('renderReviews', e); }
-}
-  $('coBtn').innerHTML = '<i class="fa-solid fa-building text-orange-600"></i> ' + esc(S.co ? S.co.nom : 'Créer mon espace');
-  updateSyncIndicator(); renderBanner(); renderDemoBar(); renderInventory(); renderPannes(); renderFleet(); renderTripsJournal(); renderDrivers(); renderChantiers(); renderCeo(); renderContact(); renderReviews();
 }
 
 /* ---------- FORMULAIRES ---------- */
