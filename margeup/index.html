@@ -99,10 +99,8 @@
 
     <!-- 2. EN-TÊTE MODE ERP APPLICATIF (ACTIF UNE FOIS CONNECTÉ) -->
     <div id="header-erp" class="hidden max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
-      <div class="flex items-center space-x-3 cursor-pointer" onclick="switchTab('ceo')">
-        <div class="w-10 h-10 rounded-lg bg-yellow-400 flex items-center justify-center font-extrabold text-slate-950 text-xl shadow-lg shadow-yellow-400/20">
-          M
-        </div>
+      <div class="flex items-center space-x-3 cursor-pointer" onclick="switchTab('accueil')">
+        <img src="images/logo.png" alt="MargeUp" class="w-10 h-10 rounded-lg shadow-md object-contain bg-white/10 p-0.5" onerror="this.onerror=null;this.src='images/logo-256.png';">
         <div>
           <div class="flex items-center space-x-2">
             <span class="text-xl font-extrabold tracking-tight text-white">Marge<span class="text-yellow-400">Up</span></span>
@@ -112,21 +110,13 @@
         </div>
       </div>
 
-      <!-- Contrôles ERP : Sync, Entreprise, Rôle & Déconnexion -->
+      <!-- Contrôles ERP : Sync, identité, entreprise & déconnexion -->
       <div class="flex items-center space-x-2 sm:space-x-3">
         <div id="syncIndicator" class="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-slate-800 text-slate-300 border border-slate-700"></div>
-        <button id="coBtn" onclick="openCompanyModal()" class="bg-slate-800 border border-slate-700 hover:border-yellow-400 text-slate-200 text-xs font-semibold rounded-xl px-3 py-2 max-w-[140px] sm:max-w-[200px] truncate" title="Mon entreprise"></button>
+        <button id="coBtn" onclick="openCompanyModal()" class="ceo-only bg-slate-800 border border-slate-700 hover:border-yellow-400 text-slate-200 text-xs font-semibold rounded-xl px-3 py-2 max-w-[140px] sm:max-w-[200px] truncate" title="Mon entreprise"></button>
+        <span id="employeeIdentity" class="employee-only hidden bg-slate-800 border border-slate-700 text-slate-200 text-xs font-semibold rounded-xl px-3 py-2 max-w-[140px] sm:max-w-[200px] truncate" title="Utilisateur connecté"></span>
         <button id="teamBtn" onclick="openTeamModal()" class="ceo-only bg-slate-800 border border-slate-700 hover:border-yellow-400 text-slate-200 text-xs font-semibold rounded-xl px-3 py-2" title="Gérer l'équipe"><i class="fa-solid fa-users text-yellow-400"></i> <span class="hidden sm:inline">Équipe</span></button>
         
-        <div class="bg-slate-800 border border-slate-700 rounded-xl p-1 flex items-center space-x-1.5">
-          <span class="text-xs text-slate-400 pl-1.5 hidden lg:inline">Rôle :</span>
-          <select id="roleSelector" onchange="requestRole(this.value)" class="bg-slate-900 text-yellow-400 text-xs font-bold rounded-lg px-2.5 py-1.5 border border-slate-700 focus:outline-none focus:border-yellow-400 cursor-pointer">
-            <option value="ceo">Direction (CEO)</option>
-            <option value="magasinier">Magasinier (Quincaillerie)</option>
-            <option value="transport">Transport (Flotte &amp; Pannes)</option>
-          </select>
-        </div>
-
         <button onclick="logoutERP()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 px-3 py-2 rounded-xl text-xs font-semibold transition cursor-pointer flex items-center gap-1.5" title="Déconnexion / Retour au site public">
           <i class="fa-solid fa-power-off text-rose-400"></i>
           <span class="hidden sm:inline">Quitter</span>
