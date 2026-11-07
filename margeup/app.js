@@ -2616,8 +2616,13 @@ function startResendCooldown(seconds = 60) {
 /**
  * Renvoyer le lien de confirmation Supabase pour un compte non encore validé.
  * Précaution 2 : Distingue bien l'acceptation de la demande par Supabase de la livraison effective de l'e-mail.
- * Précaution 3 : Conserve http://127.0.0.1:5500/ pour nos tests locaux.
+ * Le lien revient à l’adresse depuis laquelle l’application est ouverte.
  */
+function getAuthRedirectUrl() {
+  // Reprend l'adresse actuelle de l'application (localhost, réseau local ou site hébergé).
+  return new URL(window.location.pathname, window.location.origin).href;
+}
+
 async function handleResendConfirmation(email, statusElId) {
   const statusEl = $(statusElId);
   if (statusEl) {
@@ -2659,8 +2664,7 @@ async function handleResendConfirmation(email, statusElId) {
     statusEl.textContent = 'Envoi de la demande à Supabase...';
   }
 
-  // Redirection explicite locale http://127.0.0.1:5500/
-  const emailRedirectTo = 'http://127.0.0.1:5500/margeup/';
+  const emailRedirectTo = getAuthRedirectUrl();
 
   const { data, error } = await sb.auth.resend({
     type: 'signup',
@@ -2824,8 +2828,7 @@ async function handleSupabaseSignup(e) {
   };
   const plan = planMap[planRaw] || 'tout_en_un';
 
-  // Redirection explicite vers l'adresse locale http://127.0.0.1:5500/margeup/
-  const emailRedirectTo = 'http://127.0.0.1:5500/margeup/';
+  const emailRedirectTo = getAuthRedirectUrl();
 
   // Inscription Supabase Auth : métadonnées transmises dans options.data
   const { data, error: signErr } = await sb.auth.signUp({
