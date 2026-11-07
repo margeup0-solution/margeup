@@ -1,5 +1,5 @@
 // MargeUp - Service Worker PWA (Offline first pour les chantiers)
-const CACHE_NAME = 'margeup-cache-v1';
+const CACHE_NAME = 'margeup-cache-v2';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -37,8 +37,27 @@ self.addEventListener('activate', event => {
 });
 
 self.addEventListener('fetch', event => {
-  // Stratégie Stale-While-Revalidate : sert le cache immédiatement, puis met à jour
   if (event.request.method !== 'GET') return;
+
+  const requestUrl = new URL(event.request.url);
+  const isAppShell = requestUrl.origin === self.location.origin &&
+    (event.request.mode === 'navigate' || /\.(html|js|css)$/.test(requestUrl.pathname));
+
+  // Toujours récupérer les pages et scripts à jour après une publication.
+  if (isAppShell) {
+    event.respondWith(
+      fetch(event.request, { cache: 'no-cache' }).then(networkResponse => {
+        if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
+          const responseToCache = networkResponse.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(event.request, responseToCache));
+        }
+        return networkResponse;
+      }).catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
+  // Pour les autres ressources, conserver la stratégie Stale-While-Revalidate.
   event.respondWith(
     caches.match(event.request).then(cachedResponse => {
       const fetchPromise = fetch(event.request).then(networkResponse => {
@@ -52,3 +71,4 @@ self.addEventListener('fetch', event => {
     })
   );
 });
+

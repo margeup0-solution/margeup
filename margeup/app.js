@@ -3107,6 +3107,25 @@ async function restoreSession() {
     return;
   }
 
+  // S'abonner avant getSession afin de ne pas manquer le retour du lien de confirmation.
+  // Les opérations asynchrones sont reportées après le callback Supabase pour éviter son verrou Auth.
+  if (!_authListenerRegistered) {
+    _authListenerRegistered = true;
+    sb.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') {
+        setTimeout(() => handleLogout(false), 0);
+      } else if ((event === 'INITIAL_SESSION' || event === 'SIGNED_IN') && session) {
+        setTimeout(() => {
+          if (!S.co || !S.co.id) {
+            handleSessionAuth(session).catch(error => {
+              console.error('[MargeUp] Erreur traitement de session:', error);
+            });
+          }
+        }, 0);
+      }
+    });
+  }
+
   try {
     const { data, error } = await sb.auth.getSession();
     const session = data?.session;
@@ -3121,20 +3140,6 @@ async function restoreSession() {
     clearLocalState();
   }
 
-  // Écoute explicite des événements Supabase Auth (enregistrée une seule fois)
-  if (!_authListenerRegistered) {
-    _authListenerRegistered = true;
-    sb.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_OUT') {
-        handleLogout(false);
-      } else if (event === 'SIGNED_IN' && session) {
-        // Validation du lien e-mail ou connexion réussie
-        if (!S.co || !S.co.id) {
-          await handleSessionAuth(session);
-        }
-      }
-    });
-  }
 }
 
 // Restauration automatique au chargement
