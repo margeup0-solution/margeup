@@ -2593,7 +2593,7 @@ function updateResendButtonsUI() {
       btn.disabled = false;
       btn.classList.remove('opacity-50', 'cursor-not-allowed');
       btn.classList.add('hover:bg-slate-700');
-      if (text) text.textContent = btn.id === 'signup-resend-btn' ? 'Renvoyer le code de confirmation' : 'Renvoyer le lien de confirmation';
+      if (text) text.textContent = 'Renvoyer le lien de confirmation';
     }
   });
 }
@@ -2619,8 +2619,8 @@ function startResendCooldown(seconds = 60) {
  * Le lien revient à l’adresse depuis laquelle l’application est ouverte.
  */
 function getAuthRedirectUrl() {
-  // Reprend l'adresse actuelle de l'application (localhost, réseau local ou site hébergé).
-  return new URL(window.location.pathname, window.location.origin).href;
+  // Les liens d'inscription doivent s'ouvrir sur le site public, même si l'inscription est faite en local.
+  return 'https://margeup.vercel.app/';
 }
 
 async function handleResendConfirmation(email, statusElId) {
@@ -2685,7 +2685,7 @@ async function handleResendConfirmation(email, statusElId) {
                           lower.includes('over_email_send_rate_limit');
 
     if (isRateLimited) {
-      errText = 'Limite d’envoi atteinte : pour des raisons de sécurité, veuillez patienter 60 secondes avant de redemander un code.';
+      errText = 'Limite d’envoi atteinte : pour des raisons de sécurité, veuillez patienter 60 secondes avant de redemander un lien.';
       startResendCooldown(60);
     }
 
@@ -2704,7 +2704,7 @@ async function handleResendConfirmation(email, statusElId) {
   const successHtml = `
     <span class="text-emerald-400 font-bold block mb-1">✓ Demande de renvoi acceptée par Supabase.</span>
     <span class="text-slate-300">
-      Un nouvel e-mail de vérification a été demandé pour <strong class="text-white">${esc(cleanEmail)}</strong>. Il contiendra un code à 6 chiffres si le modèle OTP est activé dans Supabase.<br>
+      Un nouveau lien de confirmation a été demandé pour <strong class="text-white">${esc(cleanEmail)}</strong>.<br>
       <em>Note : l'acceptation de la demande par le serveur confirme sa prise en compte mais ne garantit pas la livraison finale dans votre boîte de réception. Pensez à vérifier vos dossiers Courriers indésirables / Spams.</em>
     </span>
   `;
@@ -2714,58 +2714,6 @@ async function handleResendConfirmation(email, statusElId) {
     statusEl.innerHTML = successHtml;
   }
   toast('Demande de renvoi acceptée par Supabase.');
-}
-
-async function handleSignupOtpVerify(e) {
-  e.preventDefault();
-  const statusEl = $('signup-otp-status');
-  const verifyBtn = $('signup-otp-verify-btn');
-  const tokenInput = $('signup-confirmation-token');
-  const email = (_lastSignupEmail || $('signup-email')?.value || '').trim().toLowerCase();
-  const token = (tokenInput?.value || '').replace(/\s/g, '');
-  const setStatus = (message, isError = false) => {
-    if (!statusEl) return;
-    statusEl.className = `text-[11px] font-medium min-h-[14px] ${isError ? 'text-rose-400' : 'text-slate-400'}`;
-    statusEl.textContent = message;
-  };
-
-  if (!email || !email.includes('@')) {
-    setStatus('Adresse e-mail introuvable. Recommencez l’inscription.', true);
-    return;
-  }
-  if (!/^\d{6}$/.test(token)) {
-    setStatus('Saisissez les 6 chiffres reçus par e-mail.', true);
-    tokenInput?.focus();
-    return;
-  }
-
-  const sb = getSupabase();
-  if (!sb) {
-    setStatus('Supabase n’est pas configuré.', true);
-    return;
-  }
-
-  if (verifyBtn) verifyBtn.disabled = true;
-  setStatus('Vérification du code…');
-  try {
-    const { data, error } = await sb.auth.verifyOtp({ email, token, type: 'signup' });
-    if (error) {
-      setStatus(error.message || 'Code invalide ou expiré. Demandez un nouveau code.', true);
-      return;
-    }
-    if (tokenInput) tokenInput.value = '';
-    setStatus('Adresse confirmée. Ouverture de votre espace…');
-    if (data?.session) {
-      await handleSessionAuth(data.session);
-    } else {
-      setStatus('Code accepté, mais aucune session reçue. Connectez-vous avec votre adresse et votre mot de passe.', true);
-    }
-  } catch (error) {
-    console.error('[MargeUp] Erreur de vérification OTP:', error);
-    setStatus('Impossible de vérifier ce code. Réessayez.', true);
-  } finally {
-    if (verifyBtn) verifyBtn.disabled = false;
-  }
 }
 
 function triggerResendFromSignup() {
@@ -2924,16 +2872,16 @@ async function handleSupabaseSignup(e) {
     // Précaution 1 : Proposition de renvoi sans révéler inutilement si l'adresse possède déjà un compte
     if (confirmMsg) {
       confirmMsg.innerHTML = `
-        Vérification requise : si une inscription est déjà en cours pour cette adresse, demandez un nouveau code de confirmation ci-dessous.<br>
-        <strong>Saisissez ensuite les 6 chiffres reçus par e-mail.</strong>
+        Vérification requise : si une inscription est déjà en cours pour cette adresse, demandez un nouveau lien de confirmation ci-dessous.<br>
+        <strong>Ouvrez le lien reçu par e-mail pour valider votre compte.</strong>
       `;
     }
-    toast('Vérification requise : vous pouvez demander le renvoi du code.');
+    toast('Vérification requise : vous pouvez demander le renvoi du lien.');
   } else {
     if (confirmMsg) {
       confirmMsg.innerHTML = `
         Un e-mail de confirmation vient de vous être envoyé.<br>
-        <strong>Saisissez le code à 6 chiffres</strong> reçu par e-mail pour valider votre compte et créer automatiquement votre espace d'entreprise.
+        <strong>Cliquez sur le lien dans votre boîte e-mail</strong> pour valider votre compte et créer automatiquement votre espace d'entreprise.
       `;
     }
     toast('E-mail de confirmation envoyé à ' + email + ' !');
