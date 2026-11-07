@@ -12,9 +12,10 @@ let _sbClient = null;
 function getSupabase() {
   if (_sbClient) return _sbClient;
   const cfg = window.MARGEUP_CONFIG?.supabase;
-  if (cfg && cfg.url && cfg.anonKey && window.supabase) {
+  const key = cfg?.anonKey || cfg?.publishableKey;
+  if (cfg && cfg.url && key && window.supabase) {
     try {
-      _sbClient = window.supabase.createClient(cfg.url, cfg.anonKey);
+      _sbClient = window.supabase.createClient(cfg.url, key);
       return _sbClient;
     } catch (e) {
       console.warn('[MargeUp] Erreur initialisation Supabase client:', e);
@@ -618,9 +619,20 @@ function hashPw(s, salt) {
   return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
 }
 function enterRole(role) {
+  if (S.blocked) {
+    toast('⚠️ Accès bloqué : vous devez changer votre mot de passe.');
+    return;
+  }
+  if (!S.co || !S.co.id) {
+    toast('Accès refusé : aucune session active.');
+    handleLogout();
+    return;
+  }
   curRole = role; try { sessionStorage.setItem('safebtp.role', role); } catch (e) {}
   if (role === 'ceo') { curUser = null; try { sessionStorage.setItem('safebtp.user', ''); } catch (e) {} }
-  $('roleSelector').value = role; changeRole(role); renderAll();
+  if ($('roleSelector')) $('roleSelector').value = role;
+  changeRole(role);
+  renderAll();
 }
 function requestRole(role, cb) {
   const rs = $('roleSelector');
@@ -2221,9 +2233,9 @@ function openContactModal(prefillSubject = '') {
       fld('E-mail (facultatif)', 'email', 'email', 'placeholder="contact@entreprise.sn"') +
     '</div>' +
     sel('Votre secteur ou besoin', 'objet', [
-      ['Pack B2C Détail (39 900 FCFA/mois)', 'Pack B2C Détail (39 900 FCFA/mois)'],
-      ['Complet Hybride B2B + B2C (69 900 FCFA/mois)', 'Complet Hybride B2B + B2C (69 900 FCFA/mois)'],
-      ['Flotte Camions & Registre Pannes (9 900 FCFA/camion)', 'Flotte Camions & Registre Pannes (9 900 FCFA/camion)'],
+      ['Pack B2C Détail', 'Pack B2C Détail'],
+      ['Complet Hybride B2B + B2C', 'Complet Hybride B2B + B2C'],
+      ['Flotte Camions & Registre Pannes', 'Flotte Camions & Registre Pannes'],
       ['Démonstration personnalisée', 'Démonstration personnalisée'],
       ['Autre question', 'Autre question']
     ]) +
@@ -2461,40 +2473,88 @@ function switchAuthTab(mode) {
   }
 }
 
-function handleDirectLogin(e) {
-  e.preventDefault();
-  const ident = ($('login-identifier')?.value || '').trim();
-  const role = $('login-role')?.value || 'ceo';
-  const pw = $('login-password')?.value || '';
-  const errBox = $('login-error');
+// ---------------------------------------------------------------------------
+// Authentification Supabase – Session, Connexion, Inscription, OTP & Rôles
+// ---------------------------------------------------------------------------
 
-  if (!ident || !pw) {
-    if (errBox) errBox.textContent = 'Veuillez saisir votre e-mail ou téléphone ainsi que votre mot de passe.';
-    return;
+/**
+ * Initialise la session utilisateur à partir de Supabase Auth et de me().
+ * Retourne un état explicite parmi :
+ * - 'success' : profil valide, rôle vérifié, accès ERP autorisé.
+ * - 'password_change_required' : session valide mais mot de passe à changer impérativement (accès ERP bloqué, aucun logout).
+ * - 'error' : session absente/invalide, échec me() ou rôle non autorisé.
+ */
+async function initUserSession(session) {
+  // Vérification de validité de session
+  if (!session || !session.user) {
+    await handleLogout(false);
+    return 'error';
   }
 
-  // Vérification ou initialisation de session
-  if (!S.co) {
-    // Si aucune entreprise n'est enregistrée, créer un espace basé sur l'identifiant saisi
-    S.co = {
-      id: uid(),
-      nom: ident.includes('@') ? ident.split('@')[0].toUpperCase() + ' SARL' : 'Entreprise ' + ident,
-      resp: 'Direction ' + role.toUpperCase(),
-      email: ident.includes('@') ? ident.toLowerCase() : 'contact@margeup.sn',
-      tel: ident.replace(/\D/g, '').length >= 9 ? ident : '77 123 45 67',
-      ville: 'Dakar',
-      plan: 'all',
-      emailVerified: true,
-      since: day()
-    };
-    if (!S.trial && !S.sub) {
-      S.trial = { start: day(), end: addDays(day(), TRIAL_DAYS), plan: 'all' };
-    }
-    save();
+  const sb = getSupabase();
+  if (!sb) {
+    toast('Supabase non configuré.');
+    await handleLogout(false);
+    return 'error';
   }
 
-  if (errBox) errBox.textContent = '';
-  
+  // 1️⃣ Appel RPC me() avec la session Supabase active
+  const { data: me, error: meErr } = await sb.rpc('me');
+  if (meErr || !me) {
+    const errMsg = 'Impossible de charger le profil : ' + (meErr?.message || 'Profil introuvable.');
+    toast(errMsg);
+    const errBox = $('login-error') || $('signup-error') || $('pwd-error');
+    if (errBox) errBox.textContent = errMsg;
+    await handleLogout(false);
+    return 'error';
+  }
+
+  // Vérification de présence de l’entreprise
+  if (!me.company || !me.company.id) {
+    const errMsg = 'Erreur : aucune entreprise associée à ce compte.';
+    toast(errMsg);
+    const errBox = $('login-error') || $('signup-error') || $('pwd-error');
+    if (errBox) errBox.textContent = errMsg;
+    await handleLogout(false);
+    return 'error';
+  }
+
+  // 2️⃣ Mise à jour de l’état global S à partir de me()
+  S.co = me.company || {};
+  if (S.co.name) S.co.nom = S.co.name;
+  if (S.co.email) S.co.email = S.co.email;
+  if (S.co.phone) S.co.tel = S.co.phone;
+  if (S.co.city) S.co.ville = S.co.city;
+
+  S.subscription = me.subscription || {};
+  S.features = me.features || {};
+
+  // 3️⃣ Rôle strict provenant exclusivement de me.role (vérifié avant tout accès et avant changement de mot de passe)
+  const roleMap = {
+    direction: 'ceo',
+    magasinier: 'magasinier',
+    transport: 'transport'
+  };
+  const role = roleMap[me.role];
+  if (!role) {
+    const errMsg = 'Erreur : rôle non autorisé ou inconnu (' + (me.role || 'aucun') + '). Accès à l’ERP refusé.';
+    toast(errMsg);
+    const errBox = $('login-error') || $('signup-error') || $('pwd-error');
+    if (errBox) errBox.textContent = errMsg;
+    await handleLogout(false);
+    return 'error';
+  }
+
+  // 4️⃣ Changement obligatoire de mot de passe
+  if (me.must_change_password) {
+    S.blocked = true;
+    toast('⚠️ Vous devez changer votre mot de passe avant de continuer.');
+    openPasswordChangeModal();
+    return 'password_change_required';
+  }
+
+  // Accès autorisé
+  S.blocked = false;
   const vAuth = $('view-auth');
   if (vAuth) vAuth.classList.add('hidden');
 
@@ -2503,62 +2563,579 @@ function handleDirectLogin(e) {
   switchTab(role);
   applyPlanRestrictions();
   toast('Connexion réussie · Espace ' + (ROLE_LABEL[role] || role) + ' ouvert !');
+  return 'success';
 }
 
-function handleDirectSignup(e) {
-  e.preventDefault();
-  const nom = ($('signup-nom')?.value || '').trim();
-  const resp = ($('signup-resp')?.value || '').trim();
-  const ville = ($('signup-ville')?.value || '').trim();
-  const tel = ($('signup-tel')?.value || '').trim();
-  const email = ($('signup-email')?.value || '').trim().toLowerCase();
-  const pw = ($('signup-pw')?.value || '').trim();
-  const plan = ($('signup-plan')?.value || 'all');
-  const errBox = ($('signup-error'));
+/**
+ * Connexion (login) – identifiant e‑mail OU numéro de téléphone.
+ * Normalisation : e-mail direct ou format serveur p<chiffres>@membres.margeup.invalid.
+ * Le rôle provient exclusivement de me().
+ */
+let _lastSignupEmail = '';
+let _resendCooldownSeconds = 0;
+let _resendInterval = null;
 
-  if (!nom || !resp || !email.includes('@') || tel.replace(/\D/g, '').length < 9) {
-    if (errBox) errBox.textContent = 'Nom d’entreprise, responsable, e-mail et téléphone valides (min. 9 chiffres) sont obligatoires.';
+function updateResendButtonsUI() {
+  const isCooldown = _resendCooldownSeconds > 0;
+  const buttons = [
+    { btn: $('signup-resend-btn'), text: $('signup-resend-btn-text') },
+    { btn: $('login-resend-btn'), text: $('login-resend-btn-text') }
+  ];
+
+  buttons.forEach(({ btn, text }) => {
+    if (!btn) return;
+    if (isCooldown) {
+      btn.disabled = true;
+      btn.classList.add('opacity-50', 'cursor-not-allowed');
+      btn.classList.remove('hover:bg-slate-700');
+      if (text) text.textContent = `Patienter (${_resendCooldownSeconds}s)...`;
+    } else {
+      btn.disabled = false;
+      btn.classList.remove('opacity-50', 'cursor-not-allowed');
+      btn.classList.add('hover:bg-slate-700');
+      if (text) text.textContent = 'Renvoyer le lien de confirmation';
+    }
+  });
+}
+
+function startResendCooldown(seconds = 60) {
+  _resendCooldownSeconds = seconds;
+  updateResendButtonsUI();
+  if (_resendInterval) clearInterval(_resendInterval);
+  _resendInterval = setInterval(() => {
+    _resendCooldownSeconds--;
+    if (_resendCooldownSeconds <= 0) {
+      clearInterval(_resendInterval);
+      _resendInterval = null;
+      _resendCooldownSeconds = 0;
+    }
+    updateResendButtonsUI();
+  }, 1000);
+}
+
+/**
+ * Renvoyer le lien de confirmation Supabase pour un compte non encore validé.
+ * Précaution 2 : Distingue bien l'acceptation de la demande par Supabase de la livraison effective de l'e-mail.
+ * Précaution 3 : Conserve http://127.0.0.1:5500/ pour nos tests locaux.
+ */
+async function handleResendConfirmation(email, statusElId) {
+  const statusEl = $(statusElId);
+  if (statusEl) {
+    statusEl.textContent = '';
+    statusEl.className = 'text-[11px] font-medium min-h-[14px]';
+  }
+
+  const cleanEmail = (email || '').trim().toLowerCase();
+  if (!cleanEmail || !cleanEmail.includes('@')) {
+    const msg = 'Veuillez renseigner une adresse e-mail valide.';
+    if (statusEl) {
+      statusEl.className = 'text-[11px] text-rose-400 font-medium min-h-[14px]';
+      statusEl.textContent = msg;
+    }
+    toast(msg);
     return;
   }
-  if (pw.length < 4) {
+
+  if (_resendCooldownSeconds > 0) {
+    toast(`Veuillez patienter ${_resendCooldownSeconds}s avant une nouvelle demande.`);
+    return;
+  }
+
+  const sb = getSupabase();
+  if (!sb) {
+    const msg = 'Supabase non configuré.';
+    if (statusEl) {
+      statusEl.className = 'text-[11px] text-rose-400 font-medium min-h-[14px]';
+      statusEl.textContent = msg;
+    }
+    toast(msg);
+    return;
+  }
+
+  const buttons = [$('signup-resend-btn'), $('login-resend-btn')];
+  buttons.forEach(b => { if (b) { b.disabled = true; b.classList.add('opacity-50'); } });
+  if (statusEl) {
+    statusEl.className = 'text-[11px] text-slate-400 font-medium min-h-[14px]';
+    statusEl.textContent = 'Envoi de la demande à Supabase...';
+  }
+
+  // Redirection explicite locale http://127.0.0.1:5500/
+  const emailRedirectTo = 'http://127.0.0.1:5500/margeup/';
+
+  const { data, error } = await sb.auth.resend({
+    type: 'signup',
+    email: cleanEmail,
+    options: {
+      emailRedirectTo
+    }
+  });
+
+  buttons.forEach(b => { if (b) { b.disabled = false; b.classList.remove('opacity-50'); } });
+
+  if (error) {
+    let errText = error.message || 'Erreur lors de la demande de renvoi.';
+    const lower = errText.toLowerCase();
+    const isRateLimited = error.status === 429 ||
+                          lower.includes('rate limit') ||
+                          lower.includes('security purposes') ||
+                          lower.includes('over_email_send_rate_limit');
+
+    if (isRateLimited) {
+      errText = 'Limite d’envoi atteinte : pour des raisons de sécurité, veuillez patienter 60 secondes avant de redemander un lien.';
+      startResendCooldown(60);
+    }
+
+    if (statusEl) {
+      statusEl.className = 'text-[11px] text-rose-400 font-medium min-h-[14px]';
+      statusEl.textContent = errText;
+    }
+    toast(errText);
+    return;
+  }
+
+  // Succès de la demande :
+  // Précaution 2 : Préciser expressément que l'acceptation de la demande par Supabase ne garantit pas la livraison finale dans la boîte de réception.
+  startResendCooldown(60);
+
+  const successHtml = `
+    <span class="text-emerald-400 font-bold block mb-1">✓ Demande de renvoi acceptée par Supabase.</span>
+    <span class="text-slate-300">
+      Un nouveau lien a été expédié à <strong class="text-white">${esc(cleanEmail)}</strong>.<br>
+      <em>Note : l'acceptation de la demande par le serveur confirme sa prise en compte mais ne garantit pas la livraison finale dans votre boîte de réception. Pensez à vérifier vos dossiers Courriers indésirables / Spams.</em>
+    </span>
+  `;
+
+  if (statusEl) {
+    statusEl.className = 'text-[11px] text-left p-2.5 rounded-lg bg-emerald-950/40 border border-emerald-500/40 font-medium mt-1';
+    statusEl.innerHTML = successHtml;
+  }
+  toast('Demande de renvoi acceptée par Supabase.');
+}
+
+function triggerResendFromSignup() {
+  const email = ($('signup-email')?.value || _lastSignupEmail || '').trim();
+  handleResendConfirmation(email, 'signup-resend-status');
+}
+
+function triggerResendFromLogin() {
+  const ident = ($('login-identifier')?.value || '').trim();
+  handleResendConfirmation(ident, 'login-resend-status');
+}
+
+async function handleSupabaseLogin(e) {
+  e.preventDefault();
+  const ident = ($('login-identifier')?.value || '').trim();
+  const password = $('login-password')?.value || '';
+  const errBox = $('login-error');
+  const loginResendBox = $('login-resend-box');
+  const loginResendStatus = $('login-resend-status');
+  if (errBox) errBox.textContent = '';
+  if (loginResendBox) loginResendBox.classList.add('hidden');
+  if (loginResendStatus) {
+    loginResendStatus.textContent = '';
+    loginResendStatus.className = 'text-[11px] font-medium min-h-[14px]';
+  }
+
+  if (!ident || !password) {
+    if (errBox) errBox.textContent = 'Identifiant et mot de passe requis.';
+    return;
+  }
+
+  const sb = getSupabase();
+  if (!sb) {
+    if (errBox) errBox.textContent = 'Supabase non configuré.';
+    return;
+  }
+
+  // Normalisation du téléphone au format serveur p<digits>@membres.margeup.invalid
+  const email = ident.includes('@')
+    ? ident.toLowerCase()
+    : `p${ident.replace(/\D/g, '')}@membres.margeup.invalid`;
+
+  const { data, error: signInErr } = await sb.auth.signInWithPassword({ email, password });
+  if (signInErr) {
+    const errMsg = signInErr.message || '';
+    if (errBox) errBox.textContent = errMsg;
+    toast(errMsg);
+
+    // Détection d'un compte non confirmé
+    const lowerMsg = errMsg.toLowerCase();
+    const isUnconfirmed = lowerMsg.includes('not confirmed') ||
+                          lowerMsg.includes('non confirmé') ||
+                          signInErr.code === 'email_not_confirmed';
+    if (isUnconfirmed && ident.includes('@')) {
+      if (loginResendBox) loginResendBox.classList.remove('hidden');
+    }
+    return;
+  }
+
+  if ($('login-password')) $('login-password').value = '';
+
+  const status = await initUserSession(data.session);
+  if (status === 'error') {
+    // initUserSession a affiché l'erreur et nettoyé l'état via handleLogout(false)
+    return;
+  }
+}
+
+/**
+ * Inscription : crée l’utilisateur Supabase Auth avec e-mail et mot de passe,
+ * transmet les métadonnées de l'entreprise dans options.data et configure emailRedirectTo.
+ * Le mot de passe n'est JAMAIS inclus dans options.data ni conservé en variable globale.
+ */
+async function handleSupabaseSignup(e) {
+  e.preventDefault();
+  const name = ($('signup-nom')?.value || '').trim();
+  const manager = ($('signup-resp')?.value || '').trim();
+  const city = ($('signup-ville')?.value || '').trim();
+  const phone = ($('signup-tel')?.value || '').trim();
+  const email = ($('signup-email')?.value || '').trim().toLowerCase();
+  const password = $('signup-pw')?.value || '';
+  const planRaw = ($('signup-plan')?.value || 'all');
+  const errBox = $('signup-error');
+  if (errBox) errBox.textContent = '';
+
+  if (!name || !manager || !email.includes('@') || phone.replace(/\D/g, '').length < 9) {
+    if (errBox) errBox.textContent = 'Nom de l’entreprise, responsable, e-mail et téléphone valides (min. 9 chiffres) sont obligatoires.';
+    return;
+  }
+  if (password.length < 4) {
     if (errBox) errBox.textContent = 'Le mot de passe doit comporter au moins 4 caractères.';
     return;
   }
 
-  // Création et initialisation automatique de l'entreprise
-  const coId = (S.co && S.co.id) || uid();
-  S.co = {
-    id: coId,
-    nom,
-    resp,
-    email,
-    tel,
-    ville,
-    plan,
-    emailVerified: true,
-    since: day()
+  const sb = getSupabase();
+  if (!sb) {
+    if (errBox) errBox.textContent = 'Supabase non configuré.';
+    return;
+  }
+
+  // Mapping strict de la formule d'abonnement
+  const planMap = {
+    'all': 'tout_en_un',
+    'tout_en_un': 'tout_en_un',
+    'hybrid_b2b_b2c': 'hybride',
+    'hybride': 'hybride',
+    'b2c_retail': 'detail',
+    'detail': 'detail',
+    'fleet_custom': 'flotte',
+    'flotte': 'flotte',
+    'entreprise': 'entreprise'
   };
+  const plan = planMap[planRaw] || 'tout_en_un';
 
-  // Enregistrement du mot de passe direction (CEO)
-  S.roles = S.roles || {};
-  S.roles['ceo'] = hashPw(pw, coId);
+  // Redirection explicite vers l'adresse locale http://127.0.0.1:5500/margeup/
+  const emailRedirectTo = 'http://127.0.0.1:5500/margeup/';
 
-  // Activation de la période d'essai de 15 jours liée à la formule choisie
-  S.trial = { start: day(), end: addDays(day(), TRIAL_DAYS), plan: plan };
+  // Inscription Supabase Auth : métadonnées transmises dans options.data
+  const { data, error: signErr } = await sb.auth.signUp({
+    email,
+    password,
+    options: {
+      emailRedirectTo,
+      data: {
+        company_name: name,
+        manager_name: manager,
+        city,
+        phone,
+        plan
+      }
+    }
+  });
 
-  save();
+  if (signErr) {
+    if (errBox) errBox.textContent = signErr.message;
+    toast(signErr.message);
+    return;
+  }
 
-  // Masquer la vue d'authentification et entrer directement dans l'ERP
-  const vAuth = $('view-auth');
-  if (vAuth) vAuth.classList.add('hidden');
+  // Effacer le mot de passe du champ et ne JAMAIS le stocker
+  if ($('signup-pw')) $('signup-pw').value = '';
+  _lastSignupEmail = email;
 
-  enterRole('ceo');
-  updateHeaderMode('erp');
-  switchTab('ceo');
-  applyPlanRestrictions();
+  // Affichage du message de confirmation d'e-mail et masquage du bouton de soumission
+  const confirmBox = $('signup-confirmation-sent');
+  const confirmMsg = $('signup-confirmation-message');
+  if (confirmBox) confirmBox.classList.remove('hidden');
 
-  toast('🎉 Félicitations ' + resp + ' ! Votre entreprise ' + nom + ' est créée et votre espace Direction est activé.');
+  const submitBtn = e.target.querySelector('button[type="submit"]');
+  if (submitBtn) submitBtn.classList.add('hidden');
+
+  // Supabase Auth : lorsque l'inscription est répétée pour un compte existant,
+  // data.user est retourné avec un tableau identities vide ([]).
+  const isRepeatedSignup = data?.user && Array.isArray(data.user.identities) && data.user.identities.length === 0;
+
+  if (isRepeatedSignup) {
+    // Précaution 1 : Proposition de renvoi sans révéler inutilement si l'adresse possède déjà un compte
+    if (confirmMsg) {
+      confirmMsg.innerHTML = `
+        Vérification requise : pour sécuriser votre compte ou si un enregistrement est déjà en cours pour cette adresse, vous pouvez demander le renvoi d'un lien de confirmation ci-dessous.<br>
+        <strong>Cliquez sur le bouton ci-dessous pour recevoir un nouveau lien.</strong>
+      `;
+    }
+    toast('Vérification requise : vous pouvez demander le renvoi du lien.');
+  } else {
+    if (confirmMsg) {
+      confirmMsg.innerHTML = `
+        Un e-mail de confirmation vient de vous être envoyé.<br>
+        <strong>Cliquez sur le lien dans votre boîte e-mail</strong> pour valider votre compte et créer automatiquement votre espace d'entreprise.
+      `;
+    }
+    toast('E-mail de confirmation envoyé à ' + email + ' !');
+  }
 }
+
+/**
+ * Affiche l’écran de changement de mot de passe obligatoire.
+ */
+function openPasswordChangeModal() {
+  openModal(`
+    <div class="space-y-4">
+      <div class="flex items-center space-x-3 text-amber-600">
+        <i class="fa-solid fa-key text-xl"></i>
+        <h3 class="text-base font-bold text-slate-900">Changement obligatoire de mot de passe</h3>
+      </div>
+      <p class="text-xs text-slate-600">Votre mot de passe doit être modifié avant de pouvoir accéder à votre espace de travail.</p>
+      <form onsubmit="handlePasswordChangeSubmit(event)" class="space-y-3">
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">Nouveau mot de passe *</label>
+          <input id="pwd-new" type="password" required minlength="6" placeholder="Au moins 6 caractères" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs text-slate-900 focus:outline-none focus:border-yellow-400">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">Confirmer le nouveau mot de passe *</label>
+          <input id="pwd-confirm" type="password" required minlength="6" placeholder="Confirmez le mot de passe" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs text-slate-900 focus:outline-none focus:border-yellow-400">
+        </div>
+        <div id="pwd-error" class="text-xs text-rose-500 font-semibold min-h-[16px]"></div>
+        <div class="flex justify-end gap-2 pt-2">
+          <button type="button" onclick="handleLogout()" class="px-4 py-2 rounded-xl text-xs bg-slate-100 text-slate-600 hover:bg-slate-200">Déconnexion</button>
+          <button type="submit" class="px-4 py-2 rounded-xl text-xs bg-yellow-400 text-slate-950 font-bold hover:bg-yellow-300">Enregistrer</button>
+        </div>
+      </form>
+    </div>
+  `);
+}
+
+/**
+ * Traitement du formulaire de changement de mot de passe obligatoire.
+ */
+async function handlePasswordChangeSubmit(e) {
+  e.preventDefault();
+  const pwd1 = $('pwd-new')?.value || '';
+  const pwd2 = $('pwd-confirm')?.value || '';
+  const errBox = $('pwd-error');
+
+  if (!pwd1 || pwd1.length < 6) {
+    if (errBox) errBox.textContent = 'Le mot de passe doit comporter au moins 6 caractères.';
+    return;
+  }
+  if (pwd1 !== pwd2) {
+    if (errBox) errBox.textContent = 'Les deux mots de passe ne correspondent pas.';
+    return;
+  }
+
+  const sb = getSupabase();
+  if (!sb) {
+    if (errBox) errBox.textContent = 'Supabase non configuré.';
+    return;
+  }
+
+  // 1️⃣ Mise à jour auth.updateUser
+  const { error: updErr } = await sb.auth.updateUser({ password: pwd1 });
+  if (updErr) {
+    if (errBox) errBox.textContent = updErr.message;
+    toast(updErr.message);
+    return;
+  }
+
+  // 2️⃣ Validation RPC côté serveur complete_password_change
+  const { error: rpcErr } = await sb.rpc('complete_password_change');
+  if (rpcErr) {
+    if (errBox) errBox.textContent = rpcErr.message;
+    toast(rpcErr.message);
+    return;
+  }
+
+  // 3️⃣ Récupération sécurisée de la session active
+  const { data: { session }, error: sessErr } = await sb.auth.getSession();
+  if (sessErr || !session) {
+    if (errBox) errBox.textContent = 'Session introuvable après mise à jour. Veuillez vous reconnecter.';
+    toast('Erreur de session. Veuillez vous reconnecter.');
+    await handleLogout(false);
+    return;
+  }
+
+  // 4️⃣ Validation du profil et autorisation d’accès ERP
+  const status = await initUserSession(session);
+  if (status === 'success') {
+    closeModal();
+    toast('Mot de passe mis à jour avec succès !');
+  } else if (status === 'password_change_required') {
+    if (errBox) errBox.textContent = 'Le changement de mot de passe n’a pas encore été validé par le serveur.';
+    toast('Veuillez renouveler l’opération.');
+  } else {
+    // status === 'error' : initUserSession a déjà affiché l'erreur et nettoyé l'état via handleLogout(false)
+    closeModal();
+  }
+}
+
+/**
+ * Réinitialise l’état applicatif local sans émettre de toast ni appeler signOut.
+ * Garantit qu’aucun ancien état ERP ne reste accessible lorsqu’une session est absente ou invalide.
+ */
+function clearLocalState() {
+  S = {};
+  curUser = null;
+  curRole = null;
+  try {
+    sessionStorage.removeItem('safebtp.role');
+    sessionStorage.removeItem('safebtp.user');
+  } catch (e) {}
+
+  const vAuth = $('view-auth');
+  if (vAuth) vAuth.classList.remove('hidden');
+  updateHeaderMode('landing');
+  switchTab('accueil');
+}
+
+let _isLoggingOut = false;
+
+/**
+ * Déconnexion – vide l’état local complet et appelle signOut() si demandé.
+ * Le paramètre triggerSignOut évite les boucles lors de l’événement SIGNED_OUT.
+ */
+async function handleLogout(triggerSignOut = true) {
+  if (_isLoggingOut) return;
+  _isLoggingOut = true;
+  try {
+    if (triggerSignOut) {
+      const sb = getSupabase();
+      if (sb) {
+        try { await sb.auth.signOut(); } catch (e) {}
+      }
+    }
+    clearLocalState();
+    toast('Déconnecté.');
+  } finally {
+    _isLoggingOut = false;
+  }
+}
+
+let _authListenerRegistered = false;
+let _isProcessingAuth = false;
+
+/**
+ * Traite une session Supabase active :
+ * 1. Vérifie si l'entreprise existe déjà via me().
+ * 2. Si aucune entreprise n'est associée, crée l'entreprise via create_company avec les métadonnées d'inscription.
+ * 3. Charge le profil et ouvre l'ERP via initUserSession().
+ */
+async function handleSessionAuth(session) {
+  if (!session || !session.user) {
+    clearLocalState();
+    return;
+  }
+  if (_isProcessingAuth) return;
+  _isProcessingAuth = true;
+
+  try {
+    const sb = getSupabase();
+    if (!sb) {
+      clearLocalState();
+      return;
+    }
+
+    // 1️⃣ Contrôle préalable : l'entreprise existe-t-elle déjà ?
+    const { data: me, error: meErr } = await sb.rpc('me');
+
+    if (!meErr && me && me.company && me.company.id) {
+      // L'entreprise existe déjà : entrée directe dans l'ERP
+      await initUserSession(session);
+      return;
+    }
+
+    // 2️⃣ Aucune entreprise trouvée : vérification des métadonnées d'inscription
+    const meta = session.user.user_metadata || {};
+    const companyName = meta.company_name;
+    const managerName = meta.manager_name;
+    const city = meta.city || 'Dakar';
+    const phone = meta.phone || '';
+    const plan = meta.plan || 'tout_en_un';
+
+    if (companyName && managerName) {
+      // Création de l'entreprise via create_company
+      const { data: newCo, error: createErr } = await sb.rpc('create_company', {
+        p_name: companyName,
+        p_manager: managerName,
+        p_city: city,
+        p_phone: phone,
+        p_email: session.user.email,
+        p_plan: plan,
+        p_units: 1
+      });
+
+      if (createErr) {
+        console.error('[MargeUp] Erreur create_company:', createErr);
+        toast('Erreur création entreprise : ' + createErr.message);
+        // Si l'entreprise existait déjà côté base, tentative d'initialisation du profil
+        await initUserSession(session);
+        return;
+      }
+
+      toast('Entreprise créée avec succès ! Bienvenue sur MargeUp.');
+      await initUserSession(session);
+      return;
+    }
+
+    // Si aucune métadonnée d'inscription n'est disponible et que me() a échoué
+    await initUserSession(session);
+  } finally {
+    _isProcessingAuth = false;
+  }
+}
+
+/**
+ * Restauration de session au chargement de la page.
+ * Gère le retour du lien de confirmation Supabase et la session active.
+ */
+async function restoreSession() {
+  const sb = getSupabase();
+  if (!sb) {
+    clearLocalState();
+    return;
+  }
+
+  try {
+    const { data, error } = await sb.auth.getSession();
+    const session = data?.session;
+    if (error || !session) {
+      // Aucune session existante ou erreur getSession
+      clearLocalState();
+    } else {
+      await handleSessionAuth(session);
+    }
+  } catch (e) {
+    console.warn('[MargeUp] Erreur restauration session:', e);
+    clearLocalState();
+  }
+
+  // Écoute explicite des événements Supabase Auth (enregistrée une seule fois)
+  if (!_authListenerRegistered) {
+    _authListenerRegistered = true;
+    sb.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_OUT') {
+        handleLogout(false);
+      } else if (event === 'SIGNED_IN' && session) {
+        // Validation du lien e-mail ou connexion réussie
+        if (!S.co || !S.co.id) {
+          await handleSessionAuth(session);
+        }
+      }
+    });
+  }
+}
+
+// Restauration automatique au chargement
+restoreSession();
 
 function updateHeaderMode(mode) {
   const hLanding = $('header-landing');
@@ -2580,8 +3157,6 @@ function updateHeaderMode(mode) {
   }
 }
 
-function logoutERP() {
-  updateHeaderMode('landing');
-  switchTab('accueil');
-  toast('Vous êtes déconnecté. Retour à la présentation publique.');
+async function logoutERP() {
+  await handleLogout();
 }

@@ -3,8 +3,9 @@
 window.MARGEUP_CONFIG = {
   // Supabase (Projet de test)
   supabase: {
-    url: (typeof process !== 'undefined' && process.env && process.env.NEXT_PUBLIC_SUPABASE_URL) || '',
-    anonKey: (typeof process !== 'undefined' && process.env && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) || ''
+    url: (typeof process !== 'undefined' && process.env && (process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL)) || 'https://ecizebjvbtbwpedivaoz.supabase.co',
+    anonKey: (typeof process !== 'undefined' && process.env && (process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY)) || 'sb_publishable_c9DnYXPDFSk3mLcA7AsBAQ_tdmkqNLd',
+    publishableKey: (typeof process !== 'undefined' && process.env && (process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY)) || 'sb_publishable_c9DnYXPDFSk3mLcA7AsBAQ_tdmkqNLd'
   },
   // Paiement manuel (Wave / Orange Money)
   pay: {
