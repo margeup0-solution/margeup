@@ -1,1 +1,3218 @@
-/* MargeUp - logique de l'application (v4)\n   Données : enregistrées dans le navigateur (localStorage) pour l'instant.\n   Quand Supabase sera branché, seules les fonctions load() et save() changeront. */\n\n/* ---------- RÉGLAGES & CONFIGURATION ---------- */\nconst CFG = window.MARGEUP_CONFIG || { pay: { wave: '', om: '', num: '' }, contact: { tel: '771906476', email: 'margeup0@gmail.com' } };\nconst PAY = CFG.pay || { wave: '', om: '', num: '' };\n\n/* ---------- CLIENT SUPABASE & SYNCHRONISATION MULTI-APPAREILS ---------- */\nlet _sbClient = null;\n\nfunction getSupabase() {\n  if (_sbClient) return _sbClient;\n  const cfg = window.MARGEUP_CONFIG?.supabase;\n  const key = cfg?.anonKey || cfg?.publishableKey;\n  if (cfg && cfg.url && key && window.supabase) {\n    try {\n      _sbClient = window.supabase.createClient(cfg.url, key);\n      return _sbClient;\n    } catch (e) {\n      console.warn('[MargeUp] Erreur initialisation Supabase client:', e);\n    }\n  }\n  return null;\n}\n\n// File d'attente hors-ligne (Offline Queue) pour le stock et les ventes\nconst OFFLINE_QUEUE_KEY = 'margeup_offline_queue_v1';\n\nfunction getOfflineQueue() {\n  try {\n    return JSON.parse(localStorage.getItem(OFFLINE_QUEUE_KEY) || '[]');\n  } catch (e) {\n    return [];\n  }\n}\n\nfunction saveOfflineQueue(queue) {\n  try {\n    localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));\n  } catch (e) {}\n  updateSyncIndicator();\n}\n\nfunction enqueueOfflineAction(action, payload) {\n  const queue = getOfflineQueue();\n  queue.push({\n    id: uid(),\n    action,\n    payload,\n    timestamp: new Date().toISOString()\n  });\n  saveOfflineQueue(queue);\n  toast('Saisie enregistrée en local (mode hors-ligne)');\n}\n\nasync function processOfflineQueue() {\n  const sb = getSupabase();\n  if (!sb || !navigator.onLine) {\n    updateSyncIndicator();\n    return;\n  }\n  const queue = getOfflineQueue();\n  if (!queue.length) {\n    updateSyncIndicator();\n    return;\n  }\n\n  const remaining = [];\n  for (const item of queue) {\n    try {\n      if (item.action === 'stock') {\n        const d = item.payload;\n        await sb.from('articles').upsert({\n          company_id: S.co?.id,\n          nom: d.name,\n          categorie: d.cat || 'Divers',\n          unite: d.unit || 'unités',\n          stock_actuel: d.qty,\n          prix_detail: d.price || 0,\n          prix_gros: d.priceGros || d.price || 0\n        });\n      } else if (item.action === 'sale') {\n        const s = item.payload;\n        await sb.from('ventes').insert({\n          company_id: S.co?.id,\n          numero_facture: s.num,\n          client_nom: s.client?.nom || 'Client comptoir',\n          client_tel: s.client?.tel || '',\n          type_vente: s.stype || 'detail',\n          mode_paiement: s.pay || 'Espèces',\n          montant_total: s.total || 0,\n          date_vente: s.date || day()\n        });\n      }\n    } catch (err) {\n      console.warn('[MargeUp Sync] Erreur synchro item queue:', err);\n      remaining.push(item);\n    }\n  }\n\n  saveOfflineQueue(remaining);\n  if (queue.length > remaining.length) {\n    toast((queue.length - remaining.length) + ' opération(s) synchronisée(s) vers le Cloud !');\n    await syncDataFromCloud();\n  }\n}\n\n// Synchronisation bidirectionnelle depuis Supabase\nasync function syncDataFromCloud() {\n  const sb = getSupabase();\n  if (!sb || !navigator.onLine || !S.co?.id) return;\n  try {\n    const { data: articles, error: errArt } = await sb.from('articles').select('*').eq('company_id', S.co.id);\n    if (!errArt && articles && articles.length) {\n      S.inventory = articles.map(a => ({\n        id: a.id,\n        depot: 'd1',\n        name: a.nom,\n        cat: a.categorie,\n        qty: Number(a.stock_actuel),\n        unit: a.unite,\n        price: Number(a.prix_detail),\n        priceGros: Number(a.prix_gros)\n      }));\n    }\n\n    const { data: ventes, error: errVen } = await sb.from('ventes').select('*').eq('company_id', S.co.id).order('created_at', { ascending: false });\n    if (!errVen && ventes && ventes.length) {\n      S.sales = ventes.map(v => ({\n        id: v.id,\n        num: v.numero_facture,\n        depot: 'd1',\n        date: v.date_vente,\n        stype: v.type_vente,\n        kind: 'particulier',\n        client: { nom: v.client_nom, tel: v.client_tel },\n        pay: v.mode_paiement,\n        lines: [],\n        total: Number(v.montant_total)\n      }));\n    }\n\n    save();\n    renderAll();\n  } catch (e) {\n    console.warn('[MargeUp Cloud Sync]', e);\n  }\n}\n\n// Indicateur visuel d'état de synchronisation\nfunction updateSyncIndicator() {\n  const el = $('syncIndicator');\n  if (!el) return;\n  const queue = getOfflineQueue();\n  const sb = getSupabase();\n\n  if (!navigator.onLine) {\n    el.innerHTML = '<span class="w-2 h-2 rounded-full bg-amber-500"></span> <span>Hors-ligne' + (queue.length ? ' (' + queue.length + ' en attente)' : '') + '</span>';\n    el.className = 'hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200';\n  } else if (!sb) {\n    el.innerHTML = '<span class="w-2 h-2 rounded-full bg-slate-400"></span> <span>Mode Local</span>';\n    el.className = 'hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200';\n  } else if (queue.length > 0) {\n    el.innerHTML = '<span class="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span> <button onclick="processOfflineQueue()" class="hover:underline">Synchro (' + queue.length + ' en attente)</button>';\n    el.className = 'hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-blue-50 text-blue-800 border border-blue-200 cursor-pointer';\n  } else {\n    el.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-500"></span> <span>En ligne & Synchronisé</span>';\n    el.className = 'hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200';\n  }\n}\n\nwindow.addEventListener('online', () => {\n  updateSyncIndicator();\n  processOfflineQueue();\n});\nwindow.addEventListener('offline', updateSyncIndicator);\n\nconst CONTACT = { tel: '771906476', email: 'margeup0@gmail.com' };\nconst TRIAL_DAYS = 15;\nconst KEY = 'safebtp.v3', KA = 'safebtp.admin.v3';\n\n/* ---------- GESTION DU CODE DE VÉRIFICATION PAR E-MAIL ---------- */\nlet verificationCode = null;\nlet pendingCompanyData = null;\nlet verificationExpiry = null;\n\n// Exposition globale pour tests et inspection\nif (typeof window !== 'undefined') {\n  Object.defineProperty(window, 'verificationCode', {\n    get() { return verificationCode; },\n    set(v) { verificationCode = v; },\n    configurable: true\n  });\n}\nconst PHASES = [['terr','Terrassement et fondations'],['gros','Gros œuvre (élévation)'],['dalle','Dalles et toiture'],['maco','Maçonnerie et enduits'],['elec','Électricité et plomberie'],['fin','Carrelage et peinture'],['rec','Finitions et réception']];\nconst TYPE_IMG = { tracteur: 'images/engins.jpg', toupie: 'images/engins.jpg', benne: 'images/engins.jpg' }; // une seule photo d'engins pour l'instant : ajoutez shacman.jpg / toupie.jpg puis changez ici\nconst ROLE_LABEL = { magasinier: 'Magasinier', transport: 'Transport', chantier: 'Chef de chantier' };\nconst GATED = ['ceo','magasinier','transport','chantier'];\nconst INPUT = 'w-full bg-white border border-slate-300 rounded-xl p-2.5 text-sm text-slate-900 focus:outline-none focus:border-yellow-400 focus:ring-1 focus:ring-yellow-400';\n\n/* ---------- OUTILS ---------- */\nconst $ = id => document.getElementById(id);\nconst esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));\nconst fm = n => Math.round(n).toLocaleString('fr-FR');\nconst uid = () => Math.random().toString(36).slice(2, 9);\nfunction day(n) { const d = new Date(); d.setDate(d.getDate() + (n || 0)); return d.toISOString().slice(0, 10); }\nfunction addDays(iso, n) { const d = new Date(iso + 'T12:00'); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); }\nconst fr = d => d ? d.split('-').reverse().join('/') : '—';\nconst daysLeft = iso => Math.round((new Date(iso + 'T12:00') - new Date(day() + 'T12:00')) / 864e5);\nfunction toast(t) {\n  let e = $('toast');\n  if (!e) { e = document.createElement('div'); e.id = 'toast'; e.className = 'fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-800 border border-slate-700 text-white text-xs font-semibold px-4 py-2.5 rounded-xl z-[70] hidden'; document.body.appendChild(e); }\n  e.textContent = t; e.classList.remove('hidden'); clearTimeout(e._t); e._t = setTimeout(() => e.classList.add('hidden'), 3200);\n}\n\n/* ---------- GESTION DES UNITÉS & CONVERSIONS QUINCAILLERIE ---------- */\n// Règle d'or sénégalaise BTP : 1 tonne de ciment = 20 sacs de 50 kg\nfunction isCementOrTonne(item) {\n  if (!item) return false;\n  const n = (item.name || '').toLowerCase();\n  const u = (item.unit || '').toLowerCase();\n  const c = (item.cat || '').toLowerCase();\n  return n.includes('ciment') || u.includes('tonne') || c.includes('ciment') || item.uom_ratio === 20;\n}\n\nfunction formatMaterialQty(itemOrQty, unitName) {\n  let qty = typeof itemOrQty === 'object' ? (itemOrQty.qty || 0) : Number(itemOrQty || 0);\n  let u = typeof itemOrQty === 'object' ? (itemOrQty.unit || '').toLowerCase() : (unitName || '').toLowerCase();\n  let name = typeof itemOrQty === 'object' ? (itemOrQty.name || '').toLowerCase() : '';\n\n  const isTonneOrSac = u.includes('tonne') || u.includes('sac') || name.includes('ciment');\n  if (!isTonneOrSac) {\n    return fm(qty) + ' ' + (typeof itemOrQty === 'object' ? esc(itemOrQty.unit || 'unités') : (unitName || ''));\n  }\n\n  // 1 tonne = 20 sacs de 50 kg\n  let totalSacs = 0;\n  if (u.includes('tonne')) {\n    totalSacs = Math.round(qty * 20 * 100) / 100;\n  } else {\n    totalSacs = Math.round(qty * 100) / 100;\n  }\n\n  const tonnes = Math.floor(totalSacs / 20);\n  const sacs = Math.round((totalSacs % 20) * 10) / 10;\n\n  if (tonnes > 0 && sacs > 0) {\n    return tonnes + ' tonne' + (tonnes > 1 ? 's' : '') + ' et ' + sacs + ' sac' + (sacs > 1 ? 's' : '') + ' (' + fm(totalSacs) + ' sacs)';\n  } else if (tonnes > 0 && sacs === 0) {\n    return fm(tonnes) + ' tonne' + (tonnes > 1 ? 's' : '') + ' (' + fm(totalSacs) + ' sacs)';\n  } else {\n    return sacs + ' sac' + (sacs > 1 ? 's' : '');\n  }\n}\n\n\n/* ---------- DONNÉES ---------- */\nfunction defaultReviews() {\n  return [\n    {\n      id: 'rev-1',\n      author: 'Mamadou Ndiaye',\n      role: 'Directeur Général',\n      company: 'Sahel BTP & Génie Civil',\n      city: 'Dakar / Diamniadio',\n      rating: 5,\n      date: day(-3),\n      tag: 'Flotte & Carburant',\n      isExample: true,\n      text: "Grâce à MargeUp, nous avons enfin une visibilité en direct sur la consommation de nos camions bennes et le nombre de tours quotidiens entre la carrière de Bargny et nos chantiers. Le contrôle précis du carburant nous a permis d'optimiser nos charges dès le premier mois."\n    },\n    {\n      id: 'rev-2',\n      author: 'Fatou Bintou Diop',\n      role: 'Gérante Propriétaire',\n      company: 'Quincaillerie Moderne du Rail',\n      city: 'Thiès',\n      rating: 5,\n      date: day(-8),\n      tag: 'Quincaillerie & Vente',\n      isExample: true,\n      text: "Le double guichet B2C/B2B et l’impression des reçus thermiques ont changé notre quotidien. Le stock de ciment et fer à béton est à jour en direct, sans inventaire de fin de mois douloureux. Mes magasiniers l'adorent."\n    },\n    {\n      id: 'rev-3',\n      author: 'Cheikh Oumar Tall',\n      role: 'Responsable Flotte & Logistique',\n      company: 'Trans-Sénégal Express',\n      city: 'Rufisque',\n      rating: 5,\n      date: day(-15),\n      tag: 'Transport & Rotations',\n      isExample: true,\n      text: "Le suivi des voyages avec les lieux précis de départ et de déchargement a complètement transformé notre contrôle. Le classement des chauffeurs avec prime au mérite a motivé toute l'équipe et diminué les pannes évitables."\n    },\n    {\n      id: 'rev-4',\n      author: 'Ing. Awa Sarr',\n      role: 'Directrice des Travaux',\n      company: 'Consortium Teranga Bâtiment',\n      city: 'Diamniadio',\n      rating: 5,\n      date: day(-22),\n      tag: 'BTP & Matériaux',\n      isExample: true,\n      text: "L'imputation directe des sorties de stock et dépenses au bon chantier permet de piloter la vraie marge nette sans mauvaise surprise. Un ERP simple et adapté aux réalités sénégalaises."\n    }\n  ];\n}\n\nfunction seed() {\n  return {\n    co: null, trial: null, sub: null, demo: true, roles: {}, team: [], seq: 3,\n    reviews: defaultReviews(),\n    depots: [{ id: 'd1', nom: 'Quincaillerie principale' }],\n    sales: [\n      { id: 'v3', num: 'FAC-2026-0003', depot: 'd1', date: day(-1), stype: 'detail', kind: 'particulier', client: { nom: 'Client comptoir Dangote', tel: '' }, pay: 'Espèces', lines: [{ item: 1, name: 'Ciment Dangote CPJ 42.5', unit: 'sacs', qty: 2, pu: 4250 }], total: 8500 },\n      { id: 'v1', num: 'FAC-2026-0001', depot: 'd1', date: day(-2), stype: 'detail', kind: 'particulier', client: { nom: 'Client comptoir', tel: '' }, pay: 'Espèces', lines: [{ item: 1, name: 'Ciment Dangote CPJ 42.5', unit: 'sacs', qty: 5, pu: 4500 }], total: 22500 },\n      { id: 'v2', num: 'FAC-2026-0002', depot: 'd1', date: day(-2), stype: 'gros', kind: 'entreprise', client: { nom: 'Entreprise Sow et Frères', tel: '771234567' }, pay: 'Wave', lines: [{ item: 1, name: 'Ciment Dangote CPJ 42.5 (3 tonnes / 60 sacs)', unit: 'sacs', qty: 60, pu: 3800 }, { item: 3, name: 'Tuyaux PEHD Pression Ø110mm', unit: 'mètres', qty: 50, pu: 7000 }], total: 578000 }\n    ],\n    chantiers: [\n      { id: 'lycee', nom: 'Chantier Lycée', budget: 95000000 },\n      { id: 'brt', nom: 'Chantier BRT Dakar - Section 3', budget: 120000000 },\n      { id: 'diamniadio', nom: 'Chantier Tour Diamniadio', budget: 150000000 },\n      { id: 'thies', nom: 'Chantier Autoroute Thiès-Touba', budget: 85000000 }\n    ],\n    inventory: [\n      { id: 1, name: 'Ciment Dangote CPJ 42.5', cat: 'Cimenterie', qty: 24, unit: 'tonne', price: 4250, priceGros: 3800, depot: 'd1', lastChantier: 'lycee', sale_unit: 'sac 50kg', uom_ratio: 20, seuil: 5 },\n      { id: 2, name: 'Fer à Béton FeE500 Ø12mm', cat: 'Acierie', qty: 45, unit: 'tonnes', price: 480000, priceGros: 460000, depot: 'd1', lastChantier: 'Tour Diamniadio', sale_unit: 'barre 6m', uom_ratio: 1, seuil: 5 },\n      { id: 3, name: 'Tuyaux PEHD Pression Ø110mm', cat: 'Plomberie/PEHD', qty: 180, unit: 'mètres', price: 7500, priceGros: 7000, depot: 'd1', lastChantier: 'BRT Dakar', seuil: 20 },\n      { id: 4, name: 'Sable de Dune (Camion 16m3)', cat: 'Agrégats', qty: 25, unit: 'camions', price: 90000, priceGros: 85000, depot: 'd1', lastChantier: 'Thiès Autoroute', seuil: 3 }\n    ],\n    pannes: [\n      { id: 1, date: day(-3), vehicle: 'Shacman X3000 (DK-8891-BG)', driver: 'Modou Diop', diag: 'Fissure durite de refroidissement + Surchauffe', severity: 'Moyenne', status: 'En Réparation', cost: 185000 },\n      { id: 2, date: day(-6), vehicle: 'Toupie Mercedes Arocs (DK-4102-BH)', driver: 'Ibrahima Sarr', diag: 'Usure plaquettes de frein avant', severity: 'Faible', status: 'Terminé', cost: 95000 },\n      { id: 3, date: day(-2), vehicle: 'Camion Benne Volvo FMX (DK-1029-BF)', driver: 'Alioune Badara', diag: "Panne d'injecteur Diesel", severity: 'Critique', status: 'En Attente Pièce', cost: 650000 }\n    ],\n    expenses: [\n      { id: 1, chantier: 'lycee', date: day(-1), title: 'Livraison 24 tonnes Ciment Dangote', source: 'Quincaillerie principale', cat: 'Matériaux', amount: 9120000 },\n      { id: 2, chantier: 'brt', date: day(-2), title: 'Carburant Gazole Toupie Shacman', source: 'Station Shell Diamniadio', cat: 'Carburant', amount: 350000 },\n      { id: 3, chantier: 'brt', date: day(-4), title: 'Achat Extérieur Raccords PEHD Ø110', source: 'Fournisseur Extérieur Comptoir', cat: 'Matériaux', amount: 480000 },\n      { id: 4, chantier: 'diamniadio', date: day(-5), title: 'Fer à béton 20 tonnes', source: 'Quincaillerie Maison Diamniadio', cat: 'Matériaux', amount: 9600000 },\n      { id: 5, chantier: 'diamniadio', date: day(-7), title: 'Paie équipe coffrage', source: 'Main d’œuvre', cat: 'Main d’œuvre', amount: 4200000 },\n      { id: 6, chantier: 'thies', date: day(-3), title: 'Gazole engins de terrassement', source: 'Station Total Thiès', cat: 'Carburant', amount: 1250000 }\n    ],\n    fleet: [\n      { id: 1, name: 'Shacman X3000', plate: 'DK-8891-BG', status: 'En Mission', driver: 'Modou Diop', type: 'tracteur',\n        carb: [{ d: day(-2), l: 180, amount: 144000, km: null, station: 'Shell Diamniadio' }, { d: day(-9), l: 200, amount: 160000, km: null, station: 'Shell Diamniadio' }],\n        trips: [\n          { d: day(-2), voyages: 6, km: 540, depart: 'Carrière Bargny', arrivee: 'Chantier Tour Diamniadio', obs: 'Sable de dune 0/4' },\n          { d: day(-9), voyages: 7, km: 610, depart: 'Port Autonome de Dakar', arrivee: 'Chantier BRT Dakar', obs: 'Fer à béton Ø12' }\n        ]\n      },\n      { id: 2, name: 'Mercedes Arocs Toupie', plate: 'DK-4102-BH', status: 'Disponible', driver: 'Ibrahima Sarr', type: 'toupie',\n        carb: [{ d: day(-4), l: 150, amount: 120000, km: null, station: 'Total Rufisque' }],\n        trips: [\n          { d: day(-4), voyages: 5, km: 380, depart: 'Centrale à béton Rufisque', arrivee: 'Chantier Lycée', obs: 'Béton prêt à l’emploi B25' }\n        ]\n      },\n      { id: 3, name: 'Volvo FMX Benne', plate: 'DK-1029-BF', status: 'En Panne', driver: 'Alioune Badara', type: 'benne',\n        carb: [{ d: day(-3), l: 220, amount: 176000, km: null, station: 'Total Thiès' }, { d: day(-8), l: 180, amount: 144000, km: null, station: 'Total Thiès' }],\n        trips: [\n          { d: day(-3), voyages: 8, km: 420, depart: 'Carrière Pout', arrivee: 'Chantier Autoroute Thiès', obs: 'Basalte concassé' },\n          { d: day(-8), voyages: 6, km: 350, depart: 'Carrière Sindia', arrivee: 'Chantier Tour Diamniadio', obs: 'Tout-venant compacté' }\n        ]\n      }\n    ],\n    batiments: [\n      { id: 'b1', chantier: 'brt', nom: 'Bâtiment A, R+2', niveaux: 3, niveauActuel: 2, ingenieur: 'Ing. Mamadou Gueye', resp: 'Chef Diallo', debut: day(-60), prevision: day(75), livraison: day(90), note: 'Coulage de la dalle du R+2 prévu dans deux semaines', ph: { terr: 100, gros: 80, dalle: 40, maco: 10, elec: 0, fin: 0, rec: 0 } },\n      { id: 'b2', chantier: 'diamniadio', nom: 'Tour principale, R+8', niveaux: 9, niveauActuel: 5, ingenieur: 'Ing. Awa Sarr', resp: 'Chef Fall', debut: day(-120), prevision: day(60), livraison: day(-10), note: 'Retard de livraison du fer : planning à revoir', ph: { terr: 100, gros: 95, dalle: 70, maco: 40, elec: 20, fin: 0, rec: 0 } },\n      { id: 'b3', chantier: 'lycee', nom: 'Bâtiment Classes, R+1', niveaux: 2, niveauActuel: 1, ingenieur: 'Ing. Awa Sarr', resp: 'Chef Sow', debut: day(-20), prevision: day(180), livraison: day(200), note: 'Pose des fondations terminée, élévation en cours', ph: { terr: 100, gros: 50, dalle: 0, maco: 0, elec: 0, fin: 0, rec: 0 } }\n    ]\n  };\n}\n/* ---------- PERSISTANCE ROBUSTE (IndexedDB + localStorage + Export de secours) ---------- */\nconst DB_NAME = 'margeup_db', DB_STORE = 'appstate', DB_VERSION = 1;\nlet _idb = null;\n\nfunction _openIDB() {\n  return new Promise((resolve) => {\n    if (!window.indexedDB) return resolve(null);\n    if (_idb) return resolve(_idb);\n    try {\n      const req = indexedDB.open(DB_NAME, DB_VERSION);\n      req.onupgradeneeded = e => { e.target.result.createObjectStore(DB_STORE); };\n      req.onsuccess = e => { _idb = e.target.result; resolve(_idb); };\n      req.onerror = () => resolve(null);\n    } catch (e) { resolve(null); }\n  });\n}\n\nfunction _idbGet(key) {\n  return new Promise(async resolve => {\n    try {\n      const db = await _openIDB();\n      if (!db) return resolve(null);\n      const tx = db.transaction(DB_STORE, 'readonly');\n      const req = tx.objectStore(DB_STORE).get(key);\n      req.onsuccess = () => resolve(req.result || null);\n      req.onerror = () => resolve(null);\n    } catch (e) { resolve(null); }\n  });\n}\n\nfunction _idbSet(key, val) {\n  return new Promise(async resolve => {\n    try {\n      const db = await _openIDB();\n      if (!db) return resolve(false);\n      const tx = db.transaction(DB_STORE, 'readwrite');\n      tx.objectStore(DB_STORE).put(val, key);\n      tx.oncomplete = () => resolve(true);\n      tx.onerror = () => resolve(false);\n    } catch (e) { resolve(false); }\n  });\n}\n\nfunction _normalize(s) {\n  if (!s || !s.inventory) return null;\n  s.roles = s.roles || {};\n  s.team = s.team || [];\n  s.depots = (s.depots && s.depots.length) ? s.depots : [{ id: 'd1', nom: 'Quincaillerie principale' }];\n  s.inventory.forEach(i => { i.depot = i.depot || s.depots[0].id; if (i.priceGros == null) i.priceGros = i.price; });\n  s.sales = s.sales || [];\n  s.fleet = s.fleet || [];\n  s.fleet.forEach(f => {\n    (f.trips || []).forEach(t => {\n      t.depart = t.depart || '';\n      t.arrivee = t.arrivee || '';\n      t.obs = t.obs || '';\n    });\n  });\n  s.pannes = s.pannes || [];\n  s.expenses = s.expenses || [];\n  s.chantiers = s.chantiers || [];\n  s.batiments = s.batiments || [];\n  s.reviews = (s.reviews && s.reviews.length) ? s.reviews : defaultReviews();\n  s.seq = s.seq || s.sales.length;\n  return s;\n}\n\nfunction load() {\n  try {\n    const raw = localStorage.getItem(KEY);\n    if (raw) {\n      const s = _normalize(JSON.parse(raw));\n      if (s) return s;\n    }\n  } catch (e) {}\n  return seed();\n}\n\nasync function syncFromIndexedDB() {\n  try {\n    const saved = await _idbGet(KEY);\n    if (saved && _normalize(saved)) {\n      // Si IndexedDB contient plus de données ou si localStorage a été effacé\n      if (!localStorage.getItem(KEY) || (saved.sales && saved.sales.length > (S.sales || []).length)) {\n        Object.assign(S, saved);\n        try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {}\n        renderAll();\n        console.log('[MargeUp] Données restaurées avec succès depuis IndexedDB');\n      }\n    }\n  } catch (e) { console.warn(e); }\n}\n\nfunction save() {\n  try {\n    const json = JSON.stringify(S);\n    // 1. Sauvegarde instantanée localStorage\n    localStorage.setItem(KEY, json);\n    // 2. Sauvegarde résiliente IndexedDB (résiste aux nettoyages de cache simples)\n    _idbSet(KEY, JSON.parse(json)).catch(() => {});\n  } catch (e) {\n    toast('Enregistrement impossible sur cet appareil');\n  }\n}\n\n// Outils d'export / import de sauvegarde d'urgence\nfunction exportBackup() {\n  const data = JSON.stringify(S, null, 2);\n  const blob = new Blob([data], { type: 'application/json' });\n  const a = document.createElement('a');\n  a.href = URL.createObjectURL(blob);\n  a.download = 'margeup-sauvegarde-' + day() + '.json';\n  a.click();\n  toast('Sauvegarde téléchargée sur votre appareil !');\n}\n\nfunction importBackup() {\n  const inp = document.createElement('input');\n  inp.type = 'file';\n  inp.accept = '.json';\n  inp.onchange = e => {\n    const file = e.target.files[0];\n    if (!file) return;\n    const reader = new FileReader();\n    reader.onload = evt => {\n      try {\n        const parsed = _normalize(JSON.parse(evt.target.result));\n        if (parsed) {\n          S = parsed;\n          save();\n          renderAll();\n          toast('Données restaurées avec succès !');\n        } else {\n          toast('Fichier de sauvegarde invalide.');\n        }\n      } catch (err) {\n        toast('Erreur de lecture du fichier.');\n      }\n    };\n    reader.readAsText(file);\n  };\n  inp.click();\n}\nlet S = load(), selChantier = null, calc = null, payMe = 'w', c1 = null, c2 = null, curRole = 'ceo', pendingRole = null, curUser = null, selDepot = null;\nconst scoped = (type, list) => (!curUser || curUser.scope.type !== type || curUser.scope.id === 'all') ? list : list.filter(x => String(x.id) === String(curUser.scope.id));\nconst scopeChantiers = () => scoped('chantier', S.chantiers), scopeDepots = () => scoped('depot', S.depots), scopeFleet = () => scoped('truck', S.fleet);\nconst scopeLabel = m => m.scope.type === 'chantier' ? 'Admin du chantier ' + ((S.chantiers.find(c => c.id === m.scope.id) || {}).nom || '?').replace('Chantier ', '') : m.scope.type === 'depot' ? 'Admin de ' + ((S.depots.find(d => d.id === m.scope.id) || {}).nom || '?') : m.scope.id === 'all' ? 'Admin de toute la flotte' : 'Admin du camion ' + ((S.fleet.find(f => String(f.id) === String(m.scope.id)) || {}).plate || '?');\nconst scopedPannes = () => (curUser && curUser.scope.type === 'truck' && curUser.scope.id !== 'all') ? S.pannes.filter(p => { const f = S.fleet.find(x => String(x.id) === String(curUser.scope.id)); return f && (p.vehicle || '').includes(f.plate); }) : S.pannes;\n\n/* ---------- ESSAI GRATUIT ET ABONNEMENT ---------- */\nfunction access() {\n  if (S.sub && S.sub.until >= day() && !S.sub.susp) return 'sub';\n  if (S.sub && S.sub.susp) return 'susp';\n  if (S.trial && S.trial.end >= day()) return 'trial';\n  if (S.trial || S.sub) return 'expired';\n  return 'visitor';\n}\nconst canUse = () => ['trial', 'sub', 'visitor'].includes(access());\n\nfunction renderBanner() {\n  const a = access(), b = $('statusBanner'); let h = '';\n  const btn = (S.co && curRole !== 'ceo') ? '' : '<button onclick="subscribeNow()" class="bg-yellow-400 hover:bg-yellow-300 text-slate-950 font-bold shadow-md px-3 py-1.5 rounded-lg text-xs">S’abonner</button>';\n  if (a === 'visitor') h = `<div class="bg-blue-500/10 border-b border-blue-500/30 text-blue-800"><div class="max-w-7xl mx-auto px-4 py-2 text-xs flex flex-wrap items-center justify-between gap-2"><span><i class="fa-solid fa-eye"></i> Mode visiteur : explorez toutes les fonctions avec des données d’exemple, sans inscription.</span><button onclick="openCompanyModal()" class="bg-yellow-400 hover:bg-yellow-300 text-slate-950 font-bold shadow-md px-3 py-1.5 rounded-lg text-xs">Créer mon espace : 15 jours gratuits</button></div></div>`;\n  if (a === 'trial') { const n = daysLeft(S.trial.end); h = `<div class="bg-emerald-500/10 border-b border-emerald-500/30 text-emerald-700"><div class="max-w-7xl mx-auto px-4 py-2 text-xs flex flex-wrap items-center justify-between gap-2"><span><i class="fa-solid fa-gift"></i> Essai gratuit : ${n === 0 ? 'dernier jour' : n + ' jour' + (n > 1 ? 's' : '') + ' restant' + (n > 1 ? 's' : '')}. Toutes les fonctions sont ouvertes.</span>${btn}</div></div>`; }\n  if (a === 'expired') h = `<div class="bg-rose-500/10 border-b border-rose-500/30 text-rose-700"><div class="max-w-7xl mx-auto px-4 py-2 text-xs flex flex-wrap items-center justify-between gap-2"><span><i class="fa-solid fa-lock"></i> Votre essai gratuit est terminé. Abonnez-vous pour rouvrir vos modules. Vos données sont conservées.</span>${btn}</div></div>`;\n  if (a === 'susp') h = `<div class="bg-rose-500/10 border-b border-rose-500/30 text-rose-700"><div class="max-w-7xl mx-auto px-4 py-2 text-xs"><i class="fa-solid fa-ban"></i> Abonnement suspendu. Contactez MargeUp.</div></div>`;\n  if (a === 'sub') h = `<div class="bg-slate-100 border-b border-slate-200 text-slate-600"><div class="max-w-7xl mx-auto px-4 py-2 text-xs"><i class="fa-solid fa-circle-check text-emerald-600"></i> Abonnement actif jusqu’au ${fr(S.sub.until)}${S.sub.status === 'verif' ? ' <span class="text-amber-600">· paiement en cours de vérification</span>' : ''}</div></div>`;\n  b.innerHTML = h;\n}\n\nfunction fillLock() {\n  const a = access();\n  $('lock-title').textContent = a === 'susp' ? 'Abonnement suspendu' : a === 'none' ? 'Créez votre espace pour commencer' : 'Votre essai gratuit est terminé';\n  $('lock-msg').textContent = a === 'none' ? 'Donnez le nom de votre entreprise pour démarrer vos 15 jours d’essai gratuit.' : 'Abonnez-vous pour rouvrir camions, quincaillerie, chantiers et tableau de bord. Toutes vos données sont conservées.';\n  $('lock-btn').onclick = a === 'none' ? () => openCompanyModal(true) : subscribeNow;\n  $('lock-btn').textContent = a === 'none' ? 'Démarrer mon essai gratuit' : 'S’abonner maintenant';\n}\n\n/* ---------- RESTRICTION DES FONCTIONNALITÉS SELON LE PLAN CHOISI ---------- */\nfunction applyPlanRestrictions() {\n  const plan = (S.sub && S.sub.plan) || (S.trial && S.trial.plan) || (S.co && S.co.plan) || 'all';\n  const tabMagasinier = $('tab-magasinier');\n  const tabTransport = $('tab-transport');\n\n  if (plan === 'b2c_retail' || plan === 'hybrid_b2b_b2c' || plan === 'quincaillerie') {\n    if (tabTransport) tabTransport.classList.add('hidden');\n    if (tabMagasinier && (curRole === 'ceo' || curRole === 'magasinier')) tabMagasinier.classList.remove('hidden');\n  } else if (plan === 'fleet' || plan === 'fleet_custom' || plan === 'transport') {\n    if (tabMagasinier) tabMagasinier.classList.add('hidden');\n    if (tabTransport && (curRole === 'ceo' || curRole === 'transport')) tabTransport.classList.remove('hidden');\n  } else {\n    // Pack tout-en-un / All\n    if (tabMagasinier && (curRole === 'ceo' || curRole === 'magasinier')) tabMagasinier.classList.remove('hidden');\n    if (tabTransport && (curRole === 'ceo' || curRole === 'transport')) tabTransport.classList.remove('hidden');\n  }\n}\n\n/* ---------- NAVIGATION ET RÔLES ---------- */\nfunction switchTab(tabId) {\n  if (tabId === 'tarifs' && S.co && curRole !== 'ceo') { toast('Les tarifs sont réservés au patron (rôle CEO).'); return; }\n  let view = tabId;\n  if (GATED.includes(tabId) && !canUse()) { view = 'locked'; fillLock(); }\n  \n  document.querySelectorAll('main > section').forEach(s => s.classList.add('hidden'));\n  const targetSection = $('view-' + view);\n  if (targetSection) targetSection.classList.remove('hidden');\n\n  // Mise à jour de l'en-tête selon qu'on est sur le site public ou dans l'ERP\n  if (tabId === 'accueil') {\n    updateHeaderMode(S.co ? 'erp' : 'landing');\n  } else {\n    updateHeaderMode('erp');\n  }\n\n  // Appliquer les restrictions de plan aux onglets visibles\n  applyPlanRestrictions();\n\n  // Style des boutons d'onglets ERP\n  document.querySelectorAll('.nav-tab').forEach(b => {\n    b.classList.remove('bg-yellow-400', 'text-slate-950', 'bg-orange-500', 'text-white');\n    b.classList.add('text-slate-400');\n  });\n  const ab = $('tab-' + tabId);\n  if (ab) {\n    ab.classList.add('bg-yellow-400', 'text-slate-950');\n    ab.classList.remove('text-slate-400');\n  }\n}\nfunction switchRoleAndTab(role) { goModule(role); }\nfunction goModule(role) { if (curRole === 'ceo' || curRole === role) switchTab(role); else requestRole(role, () => switchTab(role)); }\nfunction changeRole(role) {\n  document.querySelectorAll('.role-restricted').forEach(b => b.classList.toggle('hidden', !(role === 'ceo' || b.classList.contains('role-' + role))));\n  const employe = !!S.co && role !== 'ceo'; // les tarifs sont réservés au patron (les visiteurs les voient)\n  document.querySelectorAll('.ceo-only').forEach(b => b.classList.toggle('hidden', employe));\n  applyPlanRestrictions();\n  const cur = document.querySelector('main > section:not(.hidden)');\n  if (cur && (employe && cur.id === 'view-tarifs' || !['view-accueil', 'view-tarifs', 'view-partenaires'].includes(cur.id))) switchTab(role === 'ceo' || employe && cur.id === 'view-tarifs' ? 'accueil' : role);\n}\nfunction hashPw(s, salt) {\n  let h1 = 0xdeadbeef, h2 = 0x41c6ce57; const t = 'safebtp|' + salt + '|' + s;\n  for (let i = 0, ch; i < t.length; i++) { ch = t.charCodeAt(i); h1 = Math.imul(h1 ^ ch, 2654435761); h2 = Math.imul(h2 ^ ch, 1597334677); }\n  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);\n  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);\n  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);\n}\nfunction enterRole(role) {\n  if (S.blocked) {\n    toast('⚠️ Accès bloqué : vous devez changer votre mot de passe.');\n    return;\n  }\n  if (!S.co || !S.co.id) {\n    toast('Accès refusé : aucune session active.');\n    handleLogout();\n    return;\n  }\n  curRole = role; try { sessionStorage.setItem('safebtp.role', role); } catch (e) {}\n  if (role === 'ceo') { curUser = null; try { sessionStorage.setItem('safebtp.user', ''); } catch (e) {} }\n  if ($('roleSelector')) $('roleSelector').value = role;\n  changeRole(role);\n  renderAll();\n}\nfunction requestRole(role, cb) {\n  const rs = $('roleSelector');\n  if (role === 'ceo' || role === curRole || !S.co) { enterRole(role); if (cb) cb(); return; } // le patron et les visiteurs n'ont pas de mot de passe\n  rs.value = curRole;\n  const M = S.team.filter(m => m.role === role);\n  if (!M.length && !S.roles[role]) return openModal('<h3 class="text-base font-bold text-slate-900">Aucun membre pour ce rôle</h3><p class="text-xs text-slate-600">Le patron doit d’abord ajouter un membre (nom, e-mail, téléphone) pour le rôle ' + ROLE_LABEL[role] + ' avec le bouton « Équipe ».</p><div class="flex justify-end"><button onclick="closeModal()" class="px-4 py-2 rounded-xl text-xs bg-slate-100 text-slate-600">Fermer</button></div>');\n  pendingRole = { role, cb };\n  openModal(formWrap('Connexion : ' + ROLE_LABEL[role], 'rolepw', `<input type="hidden" name="role" value="${role}">` + (M.length ? sel('Votre nom', 'member', M.map(m => [m.id, m.nom + ' · ' + scopeLabel(m)])) : '') + fld('Mot de passe', 'pw', 'password', 'required autocomplete="off"') + '<div id="pwErr" class="text-xs text-rose-600"></div>', 'Entrer'));\n}\n\n/* ---------- FENÊTRES (MODAL) ---------- */\nfunction openModal(html) { $('modalBox').innerHTML = html; $('modal').classList.remove('hidden'); }\nfunction closeModal() { $('modal').classList.add('hidden'); }\nconst fld = (l, n, t = 'text', a = '') => `<label class="block text-xs font-semibold text-slate-500">${l}<input name="${n}" type="${t}" ${a} class="${INPUT} mt-1"></label>`;\nconst sel = (l, n, o) => `<label class="block text-xs font-semibold text-slate-500">${l}<select name="${n}" class="${INPUT} mt-1">${o.map(x => `<option value="${esc(x[0])}">${esc(x[1])}</option>`).join('')}</select></label>`;\nconst formWrap = (title, f, body, ok, cancel = true) => `<h3 class="text-base font-bold text-slate-900">${title}</h3><form data-f="${f}" class="space-y-3">${body}<div class="flex justify-end gap-2 pt-2">${cancel ? '<button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl text-xs bg-slate-100 text-slate-600">Annuler</button>' : ''}<button class="px-4 py-2 rounded-xl text-xs bg-yellow-400 text-slate-950 font-bold">${ok}</button></div></form>`;\n\n/* ---------- ENTREPRISE & VÉRIFICATION EMAIL ---------- */\nfunction generateVerificationCode() {\n  return String(Math.floor(100000 + Math.random() * 900000));\n}\n\nasync function sendVerificationEmail(email) {\n  verificationCode = generateVerificationCode();\n  verificationExpiry = Date.now() + 15 * 60 * 1000; // Valide 15 minutes\n  if (typeof window !== 'undefined') window.verificationCode = verificationCode;\n\n  const sb = getSupabase();\n  if (sb && email && email.includes('@')) {\n    try {\n      await sb.auth.signInWithOtp({ email });\n      console.log('[MargeUp Auth] E-mail de vérification envoyé avec succès via Supabase à', email);\n    } catch (err) {\n      console.warn('[MargeUp Auth] Supabase OTP fallback:', err.message || err);\n    }\n  }\n  console.log(`[MargeUp Auth] Code de vérification généré pour ${email} : ${verificationCode}`);\n  return verificationCode;\n}\n\nfunction openCompanyModal(forceOpen, prefill) {\n  if (S.co && curRole !== 'ceo') return toast('Réservé au patron : repassez au rôle CEO.');\n  const c = prefill || S.co || {};\n\n  const verifiedBadge = (S.co && S.co.emailVerified) ? `\n    <div class="bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs px-3 py-2 rounded-xl flex items-center justify-between">\n      <div class="flex items-center gap-2">\n        <i class="fa-solid fa-circle-check text-emerald-600 text-sm"></i>\n        <span>E-mail vérifié : <b class="font-bold text-slate-900">${esc(S.co.email)}</b></span>\n      </div>\n      <span class="text-[10px] text-emerald-700 bg-emerald-100 font-bold px-2 py-0.5 rounded-full">Actif</span>\n    </div>` : '';\n\n  const subtitle = S.co\n    ? 'Modifiez les informations de votre entreprise. Une modification d’e-mail nécessite une confirmation par code de sécurité.'\n    : 'Créez votre espace : vos 15 jours d’essai gratuit démarrent dès validation de votre adresse e-mail par code de sécurité.';\n\n  const body = `\n    <img src="images/chantier.jpg" alt="" class="w-full h-28 object-cover rounded-xl">\n    ${verifiedBadge}\n    <p class="text-xs text-slate-600">${subtitle}</p>\n    ${fld('Nom de l’entreprise *', 'nom', 'text', `required value="${esc(c.nom || '')}" placeholder="Ex. Sénégal Pavage SARL"`)}\n    ${fld('Nom et prénom du patron (CEO) *', 'resp', 'text', `required value="${esc(c.resp || '')}" placeholder="Ex. Moussa Diop"`)}\n    <div class="grid grid-cols-2 gap-3">\n      ${fld('E-mail *', 'email', 'email', `required value="${esc(c.email || '')}" placeholder="contact@entreprise.sn"`)}\n      ${fld('Téléphone *', 'tel', 'tel', `required minlength="9" value="${esc(c.tel || '')}" placeholder="77 000 00 00"`)}\n    </div>\n    ${fld('Ville', 'ville', 'text', `value="${esc(c.ville || '')}" placeholder="Ex. Dakar, Thiès, Touba"`)}\n    ${S.co ? '<button type="button" onclick="openTeamModal()" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-900 text-xs font-bold py-2.5 rounded-xl border border-slate-300"><i class="fa-solid fa-users"></i> Gérer mon équipe et les admins</button>' : ''}\n  `;\n\n  openModal(formWrap(\n    S.co ? 'Mon entreprise' : 'Créer mon espace · Étape 1/2',\n    'co',\n    body,\n    S.co ? 'Enregistrer les modifications' : 'Continuer vers la vérification e-mail <i class="fa-solid fa-arrow-right ml-1"></i>'\n  ));\n}\n\nfunction openVerificationModal() {\n  if (!pendingCompanyData) return openCompanyModal();\n\n  const code = verificationCode || sendVerificationEmail(pendingCompanyData.email);\n\n  openModal(`\n    <div class="space-y-4">\n      <div class="text-center space-y-1.5">\n        <div class="w-14 h-14 bg-orange-500/10 text-orange-600 rounded-2xl flex items-center justify-center text-2xl mx-auto ring-8 ring-orange-500/5">\n          <i class="fa-solid fa-envelope-circle-check"></i>\n        </div>\n        <div class="inline-flex items-center gap-1.5 bg-orange-500/10 text-orange-700 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase">\n          Étape 2/2 · Sécurité\n        </div>\n        <h3 class="text-lg font-black text-slate-900">Vérification de votre e-mail</h3>\n        <p class="text-xs text-slate-600 max-w-sm mx-auto">\n          Un code de sécurité à 6 chiffres a été envoyé à l’adresse :<br>\n          <span class="font-bold text-slate-900 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200 inline-block mt-1">${esc(pendingCompanyData.email)}</span>\n        </p>\n      </div>\n\n      <!-- BANNIÈRE SIMULATION LOCALE / VISIBILITÉ DIRECTE -->\n      <div class="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl p-3.5 space-y-2 text-xs">\n        <div class="flex items-center justify-between">\n          <span class="font-bold text-blue-900 flex items-center gap-1.5">\n            <i class="fa-solid fa-flask-vial text-blue-600"></i> Mode Test Local & Aperçu\n          </span>\n          <span class="text-[10px] bg-blue-600 text-white font-bold px-2 py-0.5 rounded-full">Simulation active</span>\n        </div>\n        <div class="flex flex-wrap items-center justify-between gap-2 bg-white/90 p-2.5 rounded-xl border border-blue-100 shadow-xs">\n          <div>\n            <div class="text-[11px] text-slate-500 font-medium">Code généré pour test :</div>\n            <div id="simulatedCodeText" class="font-mono font-black text-xl text-blue-700 tracking-wider">${code}</div>\n          </div>\n          <button type="button" onclick="autoFillVerificationCode()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-3 py-2 rounded-xl transition flex items-center gap-1.5 shadow-sm cursor-pointer">\n            <i class="fa-solid fa-wand-magic-sparkles"></i> Remplir automatiquement\n          </button>\n        </div>\n        <p class="text-[11px] text-blue-800 leading-tight">\n          Ce code simule l'e-mail de confirmation reçu par le client pour tester le flux en local sans délai.\n        </p>\n      </div>\n\n      <form data-f="verifyEmail" class="space-y-4">\n        <div>\n          <label class="block text-xs font-semibold text-slate-700 text-center mb-2">\n            Entrez les 6 chiffres du code :\n          </label>\n          <div class="flex justify-center">\n            <input type="text" id="emailCodeInput" name="code" required maxlength="6" pattern="[0-9]{6}" autocomplete="one-time-code" placeholder="------" class="text-center font-mono text-2xl tracking-[0.35em] font-black w-56 py-2.5 px-3 bg-white border-2 border-slate-300 rounded-xl focus:border-orange-500 focus:outline-none focus:ring-4 focus:ring-orange-500/10 text-slate-900 shadow-inner">\n          </div>\n          <div id="verifyCodeErr" class="text-xs text-rose-600 text-center font-semibold mt-2 min-h-[16px]"></div>\n        </div>\n\n        <div class="space-y-2 pt-1">\n          <button type="submit" class="w-full bg-yellow-400 hover:bg-yellow-300 text-slate-950 font-bold shadow-md py-3 rounded-xl text-xs flex items-center justify-center gap-2 shadow-md transition cursor-pointer">\n            <i class="fa-solid fa-circle-check"></i> Confirmer le code et activer mon espace\n          </button>\n          \n          <div class="flex justify-between items-center pt-2 text-xs border-t border-slate-200">\n            <button type="button" onclick="resendVerificationCode()" class="text-orange-600 hover:text-orange-700 font-bold flex items-center gap-1.5 cursor-pointer">\n              <i class="fa-solid fa-rotate-right"></i> Renvoyer un code\n            </button>\n            <button type="button" onclick="backToCompanyForm()" class="text-slate-600 hover:text-slate-900 flex items-center gap-1 cursor-pointer">\n              <i class="fa-solid fa-arrow-left"></i> Modifier les infos\n            </button>\n          </div>\n        </div>\n      </form>\n    </div>\n  `);\n\n  setTimeout(() => {\n    const inp = $('emailCodeInput');\n    if (inp) inp.focus();\n  }, 100);\n}\n\nfunction autoFillVerificationCode() {\n  const inp = $('emailCodeInput');\n  if (inp && verificationCode) {\n    inp.value = verificationCode;\n    inp.focus();\n    if ($('verifyCodeErr')) $('verifyCodeErr').textContent = '';\n  }\n}\n\nfunction resendVerificationCode() {\n  if (!pendingCompanyData) return;\n  const newCode = sendVerificationEmail(pendingCompanyData.email);\n  const disp = $('simulatedCodeText');\n  if (disp) disp.textContent = newCode;\n  const inp = $('emailCodeInput');\n  if (inp) inp.value = '';\n  if ($('verifyCodeErr')) $('verifyCodeErr').textContent = '';\n  toast('Nouveau code envoyé à ' + pendingCompanyData.email + ' : ' + newCode);\n}\n\nfunction backToCompanyForm() {\n  openCompanyModal(false, pendingCompanyData);\n}\n\n/* ---------- CALCULATEUR DE TARIFS & PACKS ---------- */\nlet billingCycle = 'monthly'; // 'monthly' ou 'annual'\nconst PACK_PRICES = {\n  b2c: 39900,\n  hybrid: 69900,\n  truck: 9900\n};\nlet quincQty = { b2c: 1, hybrid: 1 };\nlet selectedTrucksCount = 1;\n\nfunction setBillingCycle(c) {\n  billingCycle = c;\n  const isAnn = c === 'annual';\n  const bm = $('btn-billing-monthly'), ba = $('btn-billing-annual');\n  if (bm && ba) {\n    bm.className = isAnn ? 'px-4 py-1.5 rounded-full text-xs font-bold transition text-slate-600 hover:text-slate-900 cursor-pointer' : 'px-4 py-1.5 rounded-full text-xs font-bold transition bg-yellow-400 text-slate-950 cursor-pointer';\n    ba.className = isAnn ? 'px-4 py-1.5 rounded-full text-xs font-bold transition bg-yellow-400 text-slate-950 cursor-pointer' : 'px-4 py-1.5 rounded-full text-xs font-bold transition text-slate-600 hover:text-slate-900 cursor-pointer';\n  }\n  updateAllPricingDisplay();\n}\n\nfunction updateQuincPricing(type) {\n  const inp = $('quinc-' + type + '-qty');\n  if (inp) {\n    quincQty[type] = Math.max(1, parseInt(inp.value) || 1);\n  }\n  updateAllPricingDisplay();\n}\n\nfunction updateTruckPricing(val) {\n  selectedTrucksCount = Math.max(1, parseInt(val) || 1);\n  updateAllPricingDisplay();\n}\n\nfunction updateAllPricingDisplay() {\n  const isAnn = billingCycle === 'annual';\n  // Facteur annuel : 10 mois payés pour 12 mois\n  const annFactor = 10 / 12;\n\n  // 1. Quincaillerie B2C\n  const qB2C = quincQty.b2c || 1;\n  const discB2C = qB2C >= 2 ? 0.10 : 0; // -10% dès 2 quincailleries\n  const unitB2C = (PACK_PRICES.b2c * (1 - discB2C)) * (isAnn ? annFactor : 1);\n  const totalB2CMonthly = unitB2C * qB2C;\n  if ($('price-b2c')) $('price-b2c').innerText = fm(totalB2CMonthly);\n  if ($('cycle-b2c')) $('cycle-b2c').innerText = isAnn ? '/mois (facturé à l’année)' : '/mois';\n  const noticeB2C = $('disc-notice-b2c');\n  if (noticeB2C) noticeB2C.classList.toggle('hidden', qB2C < 2);\n\n  // 2. Quincaillerie Hybride\n  const qHyb = quincQty.hybrid || 1;\n  const discHyb = qHyb >= 2 ? 0.10 : 0; // -10% dès 2 quincailleries\n  const unitHyb = (PACK_PRICES.hybrid * (1 - discHyb)) * (isAnn ? annFactor : 1);\n  const totalHybMonthly = unitHyb * qHyb;\n  if ($('price-hybrid')) $('price-hybrid').innerText = fm(totalHybMonthly);\n  if ($('cycle-hybrid')) $('cycle-hybrid').innerText = isAnn ? '/mois (facturé à l’année)' : '/mois';\n  const noticeHyb = $('disc-notice-hybrid');\n  if (noticeHyb) noticeHyb.classList.toggle('hidden', qHyb < 2);\n\n  // 3. Flotte Camions\n  const trkUnit = PACK_PRICES.truck * (isAnn ? annFactor : 1);\n  const trkTotal = trkUnit * selectedTrucksCount;\n  if ($('price-truck')) $('price-truck').innerText = fm(trkUnit);\n  if ($('cycle-truck')) $('cycle-truck').innerText = isAnn ? '/ camion / mois (annuel)' : '/ camion / mois';\n  if ($('truck-count-display')) $('truck-count-display').innerText = selectedTrucksCount + (selectedTrucksCount > 1 ? ' camions' : ' camion');\n  if ($('truck-total-display')) $('truck-total-display').innerText = fm(trkTotal) + ' FCFA' + (isAnn ? ' /mois' : '');\n}\n\nfunction updatePricingCalculator() {\n  updateAllPricingDisplay();\n}\n\nfunction chooseQuincPack(planCode, basePrice, planLabel) {\n  if (!S.co) {\n    openAuthPhase('signup', planCode);\n    toast('Démarrez votre essai gratuit de 15 jours sur l’offre ' + planLabel + ' !');\n    return;\n  }\n  const isAnn = billingCycle === 'annual';\n  const type = planCode === 'b2c_retail' ? 'b2c' : 'hybrid';\n  const qty = quincQty[type] || 1;\n  const disc = qty >= 2 ? 0.10 : 0; // Remise 10%\n  const monthlyGross = basePrice * qty;\n  const monthlyNet = Math.round(monthlyGross * (1 - disc));\n  const totalToPay = isAnn ? monthlyNet * 10 : monthlyNet;\n\n  calc = {\n    planCode,\n    planLabel: planLabel + ' (' + qty + ' dépôt' + (qty > 1 ? 's' : '') + ')',\n    qty,\n    discPercent: disc * 100,\n    isAnnual: isAnn,\n    total: totalToPay\n  };\n  payMe = 'w';\n\n  openModal(`<div class="border-b border-slate-200 pb-3">\n    <div class="inline-flex items-center space-x-1.5 bg-orange-500/10 text-orange-700 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase mb-1">\n      <i class="fa-solid fa-store text-orange-600"></i><span>Abonnement MargeUp</span>\n    </div>\n    <h3 class="text-lg font-black text-slate-900">Souscrire au ${esc(planLabel)}</h3>\n    <p class="text-xs text-slate-500">${qty} point(s) de vente · ${isAnn ? 'Facturation annuelle (-2 mois offerts : 10 mois payés pour 12)' : 'Facturation mensuelle sans engagement'}</p>\n  </div>\n  <div class="space-y-3 pt-3">\n    <div class="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-1.5 text-xs">\n      <div class="flex justify-between">\n        <span class="text-slate-600">Nombre de quincailleries :</span>\n        <b class="text-slate-900">${qty}</b>\n      </div>\n      ${disc > 0 ? `<div class="flex justify-between text-emerald-700 font-bold">\n        <span>Remise Réseau Multi-points (-10%) :</span>\n        <span>-${fm(monthlyGross * 0.10)} FCFA / mois</span>\n      </div>` : ''}\n      <div class="flex justify-between items-center text-sm font-black pt-1 border-t border-slate-200">\n        <span class="text-slate-800">Total net à régler :</span>\n        <span class="text-orange-600 text-lg">${fm(totalToPay)} FCFA ${isAnn ? '<span class="text-xs font-normal text-slate-500">pour 12 mois</span>' : '<span class="text-xs font-normal text-slate-500">/ mois</span>'}</span>\n      </div>\n    </div>\n\n    <p class="text-xs text-slate-700">Réglez votre abonnement par Wave ou Orange Money :</p>\n    <div class="grid grid-cols-2 gap-3">\n      <button type="button" onclick="payWith('w')" class="p-3.5 rounded-xl border-2 border-cyan-400 bg-cyan-400/10 text-slate-900 text-sm font-black flex items-center justify-center gap-2 cursor-pointer hover:bg-cyan-400/20">\n        <span class="w-2.5 h-2.5 rounded-full bg-cyan-400"></span> Wave\n      </button>\n      <button type="button" onclick="payWith('o')" class="p-3.5 rounded-xl border-2 border-orange-500 bg-orange-500/10 text-slate-900 text-sm font-black flex items-center justify-center gap-2 cursor-pointer hover:bg-orange-500/20">\n        <span class="w-2.5 h-2.5 rounded-full bg-orange-500"></span> Orange Money\n      </button>\n    </div>\n    <p class="text-[11px] text-slate-500 pt-1">Après le paiement, renseignez votre numéro et la référence reçue par SMS :</p>\n    <form data-f="pay" class="space-y-3">\n      ${fld('Numéro qui a payé', 'phone', 'tel', 'required placeholder="77 000 00 00"')}\n      ${fld('Référence de transaction (reçue par SMS)', 'ref', 'text', 'required minlength="6" placeholder="Ex. TX123456789"')}\n      <div class="flex justify-end gap-2 pt-2">\n        <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl text-xs bg-slate-100 text-slate-600 cursor-pointer">Annuler</button>\n        <button class="px-4 py-2 rounded-xl text-xs bg-yellow-400 hover:bg-yellow-300 text-slate-950 font-bold shadow-md cursor-pointer shadow-md shadow-orange-500/30">Activer mon abonnement</button>\n      </div>\n    </form>\n  </div>`);\n}\n\nfunction chooseTruckPack() {\n  if (!S.co) {\n    openAuthPhase('signup', 'fleet_custom');\n    toast('Démarrez votre essai gratuit de 15 jours sur l’offre Flotte (' + selectedTrucksCount + ' camion' + (selectedTrucksCount > 1 ? 's' : '') + ') !');\n    return;\n  }\n  const isAnn = billingCycle === 'annual';\n  const unit = PACK_PRICES.truck;\n  const monthlyTotal = unit * selectedTrucksCount;\n  const totalToPay = isAnn ? monthlyTotal * 10 : monthlyTotal; // -2 mois offerts si annuel\n\n  calc = {\n    planCode: 'fleet_custom',\n    planLabel: 'Flotte (' + selectedTrucksCount + ' camion' + (selectedTrucksCount > 1 ? 's' : '') + ')',\n    camions: selectedTrucksCount,\n    isAnnual: isAnn,\n    total: totalToPay\n  };\n  payMe = 'w';\n\n  openModal(`<div class="border-b border-slate-200 pb-3">\n    <div class="inline-flex items-center space-x-1.5 bg-amber-500/10 text-amber-700 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase mb-1">\n      <i class="fa-solid fa-truck text-amber-600"></i><span>Abonnement Flotte Camions</span>\n    </div>\n    <h3 class="text-lg font-black text-slate-900">Abonnement Parc : ${selectedTrucksCount} camion(s)</h3>\n    <p class="text-xs text-slate-500">${isAnn ? 'Facturation annuelle (-2 mois offerts : payez 10 mois pour 12)' : 'Facturation mensuelle sans engagement'}</p>\n  </div>\n  <div class="space-y-3 pt-3">\n    <div class="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-1 text-xs">\n      <div class="flex justify-between">\n        <span class="text-slate-600">Tarif unitaire :</span>\n        <b class="text-slate-900">${fm(unit)} FCFA / camion / mois</b>\n      </div>\n      <div class="flex justify-between">\n        <span class="text-slate-600">Véhicules couverts :</span>\n        <b class="text-slate-900">${selectedTrucksCount} camion(s)</b>\n      </div>\n      <div class="flex justify-between items-center text-sm font-black pt-1 border-t border-slate-200">\n        <span class="text-slate-800">Total net à régler :</span>\n        <span class="text-amber-700 text-lg">${fm(totalToPay)} FCFA ${isAnn ? '<span class="text-xs font-normal text-slate-500">pour 12 mois</span>' : '<span class="text-xs font-normal text-slate-500">/ mois</span>'}</span>\n      </div>\n    </div>\n\n    <p class="text-xs text-slate-700">Réglez votre abonnement par Wave ou Orange Money :</p>\n    <div class="grid grid-cols-2 gap-3">\n      <button type="button" onclick="payWith('w')" class="p-3.5 rounded-xl border-2 border-cyan-400 bg-cyan-400/10 text-slate-900 text-sm font-black flex items-center justify-center gap-2 cursor-pointer hover:bg-cyan-400/20">\n        <span class="w-2.5 h-2.5 rounded-full bg-cyan-400"></span> Wave\n      </button>\n      <button type="button" onclick="payWith('o')" class="p-3.5 rounded-xl border-2 border-orange-500 bg-orange-500/10 text-slate-900 text-sm font-black flex items-center justify-center gap-2 cursor-pointer hover:bg-orange-500/20">\n        <span class="w-2.5 h-2.5 rounded-full bg-orange-500"></span> Orange Money\n      </button>\n    </div>\n    <p class="text-[11px] text-slate-500 pt-1">Après le paiement, renseignez votre numéro et la référence reçue par SMS :</p>\n    <form data-f="pay" class="space-y-3">\n      ${fld('Numéro qui a payé', 'phone', 'tel', 'required placeholder="77 000 00 00"')}\n      ${fld('Référence de transaction (reçue par SMS)', 'ref', 'text', 'required minlength="6" placeholder="Ex. TX123456789"')}\n      <div class="flex justify-end gap-2 pt-2">\n        <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl text-xs bg-slate-100 text-slate-600 cursor-pointer">Annuler</button>\n        <button class="px-4 py-2 rounded-xl text-xs bg-slate-900 hover:bg-slate-800 text-white font-bold cursor-pointer">Activer mon parc flotte</button>\n      </div>\n    </form>\n  </div>`);\n}\n\nfunction subscribeNow() {\n  chooseQuincPack('hybrid_b2b_b2c', 69900, 'Complet Hybride B2B + B2C');\n}\nfunction payWith(m) { payMe = m; openPayApp(); }\nfunction copyNum() { try { navigator.clipboard.writeText(PAY.num); return true; } catch (e) { return false; } }\nfunction openPayApp() {\n  const l = payMe === 'w' ? PAY.wave : PAY.om, nom = payMe === 'w' ? 'Wave' : 'Orange Money';\n  if (l) return window.open(l.replace('{amount}', Math.round(calc.total)).replace('{num}', PAY.num.replace(/\D/g, '')), '_blank');\n  toast(copyNum() ? 'Le numéro du marchand est copié. Ouvrez ' + nom + ', choisissez Envoyer, collez-le et saisissez ' + fm(calc.total) + ' FCFA.' : 'Ouvrez ' + nom + ' puis contactez MargeUp pour finaliser le paiement.');\n}\n\n/* ---------- QUINCAILLERIE ---------- */\nfunction renderInventory() {\n  const D = scopeDepots();\n  if (!D.find(d => d.id === selDepot)) selDepot = D.length ? D[0].id : null;\n  $('depot-select').innerHTML = D.map(d => `<option value="${esc(d.id)}" ${d.id === selDepot ? 'selected' : ''}>${esc(d.nom)}</option>`).join('');\n  const q = ($('stock-search').value || '').toLowerCase(), tb = $('inventory-table-body');\n  const L = S.inventory.filter(i => i.depot === selDepot && (!q || (i.name + ' ' + i.cat).toLowerCase().includes(q)));\n  tb.innerHTML = L.length ? L.map(i => {\n    const isTonne = isCementOrTonne(i);\n    const formattedQty = formatMaterialQty(i);\n    let priceDisplay = '';\n    if (isTonne) {\n      priceDisplay = `<div><b class="text-slate-900">${fm(i.price)} FCFA</b> <span class="text-[11px] text-slate-500">/ sac</span></div>\n        <div class="text-[10px] text-slate-500 font-medium">Tonne (20 sacs) : ${fm(i.price * 20)} FCFA</div>\n        <div class="text-[10px] text-purple-700 font-medium">Gros : ${fm(i.priceGros || i.price)} FCFA/sac (${fm((i.priceGros || i.price) * 20)} F/t)</div>`;\n    } else {\n      priceDisplay = `<div><b class="text-slate-900">${fm(i.price)} FCFA</b></div><div class="text-[10px] text-slate-500">Gros : ${fm(i.priceGros || i.price)} FCFA</div>`;\n    }\n    return `<tr class="hover:bg-slate-50">\n      <td class="p-4">\n        <div class="font-bold text-slate-900">${esc(i.name)}</div>\n        ${isTonne ? '<span class="inline-flex items-center gap-1 text-[10px] bg-amber-50 text-amber-800 font-bold px-2 py-0.5 rounded-full border border-amber-200 mt-0.5"><i class="fa-solid fa-scale-balanced text-[9px]"></i> 1 tonne = 20 sacs</span>' : ''}\n      </td>\n      <td class="p-4"><span class="bg-purple-500/10 text-purple-700 px-2 py-0.5 rounded border border-purple-500/20 text-[11px]">${esc(i.cat)}</span></td>\n      <td class="p-4 font-bold ${i.qty <= (i.seuil || 0) ? 'text-amber-700' : 'text-emerald-700'}">\n        <div class="text-sm font-black">${formattedQty}</div>\n      </td>\n      <td class="p-4">${priceDisplay}</td>\n      <td class="p-4 text-slate-600">${esc(i.lastChantier || '—')}</td>\n      <td class="p-4 text-right">\n        <button onclick="openDispatchModal(${i.id})" class="bg-purple-600 hover:bg-purple-500 text-white text-[11px] font-bold px-3 py-1.5 rounded-lg shadow-sm">\n          Expédier vers Chantier\n        </button>\n      </td>\n    </tr>`;\n  }).join('')\n    : '<tr><td colspan="6" class="p-6 text-center text-slate-500">Aucun article. Cliquez sur « Entrée en Stock / Nouvel Article ».</td></tr>';\n  renderSales();\n}\nfunction setDepot(id) { selDepot = id; renderInventory(); }\nfunction openDepotModal() {\n  if (access() === 'sub' && S.depots.length >= S.sub.quinc) return toast('Votre abonnement couvre ' + S.sub.quinc + ' quincaillerie(s). Augmentez-le pour en ajouter.');\n  openModal(formWrap('Nouvelle quincaillerie', 'depot', fld('Nom de la quincaillerie ou du dépôt', 'nom', 'text', 'required placeholder="Quincaillerie Rufisque"'), 'Créer'));\n}\nfunction openStockModal() {\n  openModal(formWrap('Entrée en stock / Nouvel arrivage', 'stock',\n    fld('Nom de l’article *', 'name', 'text', 'required placeholder="Ex. Ciment Dangote CPJ 42.5"') +\n    '<div class="grid grid-cols-2 gap-3">' +\n      fld('Catégorie', 'cat', 'text', 'placeholder="Ex. Cimenterie, Plomberie..."') +\n      sel('Unité de référence', 'unit', [\n        ['tonne', 'Tonnes (1 t = 20 sacs)'],\n        ['sacs', 'Sacs de 50 kg'],\n        ['mètres', 'Mètres (m)'],\n        ['camions', 'Camions'],\n        ['unités', 'Unités / Pièces']\n      ]) +\n    '</div>' +\n    '<div class="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 text-xs text-amber-900 space-y-1">' +\n      '<div class="font-bold flex items-center gap-1.5"><i class="fa-solid fa-scale-balanced text-amber-600"></i> Règle de conversion MargeUp : 1 tonne = 20 sacs (50 kg)</div>' +\n      '<div>Pour le ciment, vous pouvez saisir en tonnes ou en sacs. L\'addition s\'effectuera toujours de façon exacte sans mélange erroné.</div>' +\n    '</div>' +\n    '<div class="grid grid-cols-2 gap-3">' +\n      fld('Quantité reçue *', 'qty', 'number', 'required min="0.01" step="any" placeholder="Ex. 24 ou 500"') +\n      sel('Unité saisie pour cet arrivage *', 'input_unit', [\n        ['tonne', 'Tonnes (1 t = 20 sacs)'],\n        ['sacs', 'Sacs de 50 kg (20 sacs = 1 t)'],\n        ['unités', 'Même unité que l\'article']\n      ]) +\n    '</div>' +\n    '<div class="grid grid-cols-2 gap-3">' +\n      fld('Prix détail (FCFA / unité ou sac)', 'price', 'number', 'min="0" placeholder="Ex. 4250"') +\n      fld('Prix gros (FCFA / unité ou sac)', 'priceGros', 'number', 'min="0" placeholder="Ex. 3800"') +\n    '</div>' +\n    '<p class="text-[11px] text-slate-500">Pour le ciment : 1 sac = 4 250 F (soit 1 tonne = 20 sacs = 85 000 F).</p>',\n    'Enregistrer'));\n}\nfunction openDispatchModal(id) {\n  const i = S.inventory.find(x => x.id == id); if (!i) return;\n  if (!S.chantiers.length) return toast('Créez d’abord un chantier');\n  const isTonne = isCementOrTonne(i);\n  openModal(formWrap('Expédier vers Chantier : ' + esc(i.name), 'dispatch',\n    `<input type="hidden" name="id" value="${i.id}">\n     <div class="bg-purple-50 border border-purple-200 rounded-xl p-3 text-xs space-y-1">\n       <div>Stock disponible actuel : <b class="text-purple-900">${formatMaterialQty(i)}</b></div>\n       ${isTonne ? '<div class="text-[11px] text-purple-700 font-medium">Conversion automatique : 1 tonne = 20 sacs (50 kg)</div>' : ''}\n     </div>` +\n    sel('Chantier de destination', 'chantier', S.chantiers.map(c => [c.id, c.nom])) +\n    (isTonne ? `\n      <div class="grid grid-cols-2 gap-3">\n        ${fld('Quantité à expédier', 'qty', 'number', 'required min="0.01" step="any" placeholder="Ex. 10"')}\n        ${sel('Unité de sortie', 'dispatch_unit', [\n          ['sacs', 'Sacs de 50 kg'],\n          ['tonnes', 'Tonnes complètes']\n        ])}\n      </div>` : fld('Quantité à sortir (' + esc(i.unit) + ')', 'qty', 'number', `required min="0.01" max="${i.qty}" step="any"`)) +\n    '<div id="dispErr" class="text-xs text-rose-600"></div>', 'Valider la sortie'));\n}\n\n/* ---------- FLOTTE ET PANNES ---------- */\nfunction renderPannes() {\n  const m = day().slice(0, 7), n = scopedPannes().filter(p => (p.date || '').startsWith(m)).length;\n  $('pannes-count').textContent = n + ' panne' + (n > 1 ? 's' : '') + ' ce mois';\n  $('pannes-table-body').innerHTML = scopedPannes().length ? scopedPannes().map(p => {\n    let b = 'bg-amber-500/20 text-amber-600 border-amber-500/30'; if (p.severity === 'Critique') b = 'bg-rose-500/20 text-rose-600 border-rose-500/30'; if (p.severity === 'Faible') b = 'bg-slate-100 text-slate-600 border-slate-300';\n    return `<tr class="hover:bg-slate-50"><td class="p-3 font-bold text-slate-900">${esc(p.vehicle)}</td><td class="p-3 text-slate-500">${esc(p.driver)}</td><td class="p-3 text-slate-600">${esc(p.diag)}</td><td class="p-3"><span class="px-2 py-0.5 rounded border text-[10px] font-bold ${b}">${esc(p.severity)}</span></td><td class="p-3 font-semibold text-amber-600">${esc(p.status)}</td><td class="p-3 font-bold text-slate-900">${fm(p.cost)} FCFA</td></tr>`;\n  }).join('') : '<tr><td colspan="6" class="p-6 text-center text-slate-500">Aucune panne enregistrée.</td></tr>';\n}\nfunction carbStats0(f) { const m = day().slice(0, 7), c = f.carb || [], M = c.filter(x => (x.d || '').startsWith(m)); return { l: M.reduce((s, x) => s + x.l, 0), a: M.reduce((s, x) => s + (x.amount || 0), 0), last: c[0] }; }\nfunction carbStats(f) {\n  const m = day().slice(0, 7), c = f.carb || [], M = c.filter(x => (x.d || '').startsWith(m)), T = (f.trips || []).filter(x => (x.d || '').startsWith(m));\n  return { l: M.reduce((s, x) => s + x.l, 0), a: M.reduce((s, x) => s + (x.amount || 0), 0), last: c[0], km: T.reduce((s, x) => s + (x.km || 0), 0), v: T.reduce((s, x) => s + (x.voyages || 0), 0), lastTrip: (f.trips || [])[0] };\n}\nfunction renderFleet() {\n  $('fleet-cards-container').innerHTML = scopeFleet().length ? scopeFleet().map(f => `\n    <div class="bg-slate-50 border border-slate-200 p-4 rounded-xl space-y-3">\n      <img src="${TYPE_IMG[f.type] || TYPE_IMG.benne}" alt="${esc(f.name)}" loading="lazy" class="w-full h-28 object-cover rounded-lg">\n      <div class="flex justify-between items-start gap-2"><div><div class="font-bold text-slate-900 text-sm">${esc(f.name)}</div><div class="text-[11px] text-slate-500">${esc(f.plate)} • Chauffeur: ${esc(f.driver)}</div></div>\n      <span class="text-[10px] bg-slate-100 border border-slate-300 ${f.status === 'En Panne' ? 'text-rose-600' : 'text-amber-600'} px-2 py-0.5 rounded-full font-bold">${esc(f.status)}</span></div>\n      ${(() => {\n        const s = carbStats(f);\n        return `<div class="bg-slate-100 rounded-lg p-2.5 text-[11px] text-slate-700 space-y-1.5">\n          <div class="flex justify-between gap-2"><span class="text-slate-600">Carburant ce mois</span><b class="text-amber-700">${fm(s.l)} L · ${fm(s.a)} FCFA</b></div>\n          <div class="flex justify-between gap-2"><span class="text-slate-600">Voyages · distance</span><b class="text-slate-900">${s.v} tour${s.v > 1 ? 's' : ''} · ${fm(s.km)} km</b></div>\n          ${s.last ? `<div class="text-slate-600">Dernier plein : ${fr(s.last.d)}, ${fm(s.last.l)} L</div>` : '<div class="text-slate-500">Aucun plein enregistré</div>'}\n          ${s.lastTrip ? `\n            <div class="pt-1.5 border-t border-slate-200 text-slate-700">\n              <span class="text-[10px] text-amber-800 font-bold uppercase block">Dernier trajet (${s.lastTrip.voyages || 1} tour${(s.lastTrip.voyages || 1) > 1 ? 's' : ''}) :</span>\n              <div class="font-semibold text-slate-900 flex items-center gap-1.5 truncate mt-0.5" title="${esc(s.lastTrip.depart || '—')} ➔ ${esc(s.lastTrip.arrivee || '—')}">\n                <i class="fa-solid fa-location-dot text-amber-600 text-[10px]"></i>\n                <span class="truncate">${esc(s.lastTrip.depart || 'Départ non précisé')}</span>\n                <i class="fa-solid fa-arrow-right text-[9px] text-slate-400 shrink-0"></i>\n                <span class="truncate">${esc(s.lastTrip.arrivee || 'Arrivée non précisée')}</span>\n              </div>\n            </div>` : ''}\n        </div>`;\n      })()}\n      <div class="flex flex-wrap gap-2">\n        <button onclick="openFuelModal(${f.id})" class="flex-1 bg-amber-600 hover:bg-amber-500 text-white text-[11px] font-bold py-1.5 rounded-lg">Plein carburant</button>\n        <button onclick="openTripModal(${f.id})" class="flex-1 bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold py-1.5 rounded-lg flex items-center justify-center gap-1">\n          <i class="fa-solid fa-route text-[10px] text-amber-400"></i> Tours & Lieux\n        </button>\n        <button onclick="openTruckTripsModal(${f.id})" class="px-2.5 py-1.5 text-[11px] bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold rounded-lg" title="Historique complet des tours de ce camion">\n          <i class="fa-solid fa-list-check"></i>\n        </button>\n        <button onclick="delTruck(${f.id})" class="px-2 text-[11px] bg-slate-100 hover:bg-rose-100 hover:text-rose-600 text-slate-500 rounded-lg" title="Retirer de la flotte">\n          <i class="fa-solid fa-trash-can"></i>\n        </button>\n      </div>\n    </div>`).join('') : '<div class="md:col-span-3 text-center text-slate-500 text-xs p-6">Aucun camion. Cliquez sur « Ajouter un camion ».</div>';\n}\nfunction openTruckModal() {\n  if (access() === 'sub' && S.fleet.length >= S.sub.trucks) return toast('Votre abonnement couvre ' + S.sub.trucks + ' camion(s). Augmentez-le pour en ajouter.');\n  openModal(formWrap('Nouveau camion', 'truck',\n    '<div class="grid grid-cols-2 gap-3">' + sel('Type de véhicule', 'type', [['tracteur', 'Tracteur / camion routier'], ['toupie', 'Toupie à béton'], ['benne', 'Camion benne / engin']]) + fld('Modèle', 'name', 'text', 'required placeholder="Shacman X3000"') + fld('Immatriculation', 'plate', 'text', 'required placeholder="DK-0000-AA"') + fld('Chauffeur', 'driver', 'text', 'required') + '</div>', 'Enregistrer'));\n}\nfunction delTruck(id) { if (!confirm('Retirer ce camion de la flotte ?')) return; S.fleet = S.fleet.filter(f => f.id != id); save(); renderAll(); }\nfunction openFuelModal(id) {\n  const f = S.fleet.find(x => x.id == id); if (!f) return;\n  openModal(formWrap('Plein de carburant : ' + esc(f.name), 'fuel', `<input type="hidden" name="id" value="${f.id}">` +\n    '<div class="grid grid-cols-2 gap-3">' + fld('Litres mis', 'l', 'number', 'required min="0" step="any"') + fld('Montant payé (FCFA)', 'amount', 'number', 'min="0"') + fld('Compteur kilométrique (facultatif)', 'km', 'number', 'min="0"') + fld('Station (facultatif)', 'station') + '</div>' +\n    (S.chantiers.length ? sel('Ajouter aux dépenses du chantier (facultatif)', 'chantier', [['', 'Ne pas imputer']].concat(S.chantiers.map(c => [c.id, c.nom]))) : ''), 'Enregistrer le plein'));\n}\nfunction openTripModal(id) {\n  const f = S.fleet.find(x => x.id == id); if (!f) return;\n  const departSuggestions = ['Carrière Bargny', 'Carrière Sindia', 'Carrière Pout', 'Port Autonome de Dakar', 'Centrale à béton Rufisque', 'Dépôt principal'].concat(S.chantiers.map(c => c.nom.replace(/^Chantier\s*/i, '')));\n  const arriveeSuggestions = S.chantiers.map(c => c.nom).concat(['Dakar Plateau', 'Diamniadio Ville Nouvelle', 'Thiès', 'Mbour', 'Lac Rose', 'Rufisque']);\n\n  const departOpts = Array.from(new Set(departSuggestions)).map(s => `<option value="${esc(s)}"></option>`).join('');\n  const arriveeOpts = Array.from(new Set(arriveeSuggestions)).map(s => `<option value="${esc(s)}"></option>`).join('');\n\n  openModal(formWrap('Saisir voyages & lieux : ' + esc(f.name), 'trip',\n    `<input type="hidden" name="id" value="${f.id}">\n     <div class="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 text-xs text-amber-900 flex justify-between items-center">\n       <div>Véhicule : <b>${esc(f.name)}</b> (${esc(f.plate)})</div>\n       <div>Chauffeur : <b>${esc(f.driver)}</b></div>\n     </div>\n     <div class="grid grid-cols-2 gap-3">\n       ${fld('Date *', 'd', 'date', `required value="${day()}"`)}\n       ${fld('Nombre de voyages (tours) *', 'voyages', 'number', 'required min="1" value="1"')}\n     </div>\n     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">\n       <label class="block text-xs font-semibold text-slate-500">\n         Lieu de départ (chargement) *\n         <input name="depart" list="list-depart" required placeholder="Ex. Carrière Bargny, Port Dakar..." class="${INPUT} mt-1">\n         <datalist id="list-depart">${departOpts}</datalist>\n       </label>\n       <label class="block text-xs font-semibold text-slate-500">\n         Lieu d'arrivée (destination / chantier) *\n         <input name="arrivee" list="list-arrivee" required placeholder="Ex. Chantier Tour Diamniadio, Dakar..." class="${INPUT} mt-1">\n         <datalist id="list-arrivee">${arriveeOpts}</datalist>\n       </label>\n     </div>\n     <div class="grid grid-cols-2 gap-3">\n       ${fld('Distance totale (km)', 'km', 'number', 'min="0" step="any" placeholder="Ex. 140"')}\n       ${fld('Marchandise / Observations (facultatif)', 'obs', 'text', 'placeholder="Ex. Sable 0/4, Fer Ø12, Béton B25..."')}\n     </div>`,\n    'Enregistrer le voyage'));\n}\nfunction driverStats(period) {\n  const m = day().slice(0, 7), inP = d => period === 'all' || (d || '').startsWith(m), map = {};\n  scopeFleet().forEach(f => {\n    const k = (f.driver || '—').trim(), s = map[k] = map[k] || { name: k, trucks: [], l: 0, a: 0, km: 0, v: 0, pannes: 0 };\n    s.trucks.push(f.name);\n    (f.carb || []).filter(x => inP(x.d)).forEach(x => { s.l += x.l; s.a += x.amount || 0; });\n    (f.trips || []).filter(x => inP(x.d)).forEach(x => { s.km += x.km || 0; s.v += x.voyages || 0; });\n  });\n  S.pannes.forEach(p => { const s = map[(p.driver || '').trim()]; if (s && inP(p.date)) s.pannes++; });\n  return Object.values(map).map(s => Object.assign(s, { l100: s.km > 0 ? s.l / s.km * 100 : null, lv: s.v > 0 ? s.l / s.v : null, has: s.l > 0 || s.km > 0 || s.v > 0 }));\n}\nfunction renderDrivers() {\n  const per = $('rank-period').value || 'month', mode = $('rank-sort').value || 'score', D = driverStats(per);\n  const wk = D.filter(x => x.l100 !== null), avg = wk.length ? wk.reduce((s, x) => s + x.l100, 0) / wk.length : null;\n  D.forEach(x => { x.score = Math.max(0, Math.round(100 - 10 * x.pannes - (x.l100 !== null && avg ? Math.max(0, (x.l100 / avg - 1) * 100) : 0))); });\n  const big = 1e9, key = { score: x => -x.score, l100: x => x.l100 === null ? big : x.l100, lv: x => x.lv === null ? big : x.lv }[mode];\n  D.sort((x, y) => (y.has - x.has) || (key(x) - key(y)) || ((x.l100 === null ? big : x.l100) - (y.l100 === null ? big : y.l100)));\n  const f1 = v => v === null ? '—' : v.toFixed(1).replace('.', ','), best = D.find(x => x.has && (mode === 'score' || key(x) < big));\n  $('driver-best').innerHTML = best ? `<div class="bg-amber-500/10 border border-amber-500/40 rounded-xl p-4 flex flex-wrap items-center gap-3"><i class="fa-solid fa-trophy text-amber-600 text-2xl"></i><div class="flex-1 min-w-0"><div class="text-xs text-amber-800 font-semibold">Meilleur chauffeur à primer</div><div class="text-lg font-black text-slate-900">${esc(best.name)}</div><div class="text-[11px] text-slate-700">${fm(best.l)} L pour ${fm(best.km)} km et ${best.v} voyage(s) · ${f1(best.l100)} L/100 km · ${f1(best.lv)} L/voyage · ${best.pannes} panne(s)</div></div><div class="text-2xl font-black text-amber-700">${best.score}<span class="text-xs font-normal text-slate-600">/100</span></div></div>` : '<div class="text-xs text-slate-600">Saisissez des pleins et des voyages pour désigner le meilleur chauffeur.</div>';\n  $('driver-table-body').innerHTML = D.length ? D.map((x, i) => `<tr class="hover:bg-slate-50 ${best && x === best ? 'bg-amber-500/5' : ''}"><td class="p-3 font-black text-slate-700">${x.has ? i + 1 : '—'}</td><td class="p-3"><div class="font-bold text-slate-900">${esc(x.name)}</div><div class="text-[10px] text-slate-600">${esc(x.trucks.join(', '))}</div></td><td class="p-3 text-slate-700">${fm(x.l)} L<div class="text-[10px] text-slate-600">${fm(x.a)} FCFA</div></td><td class="p-3 text-slate-700">${fm(x.km)} km</td><td class="p-3 text-slate-700">${x.v}</td><td class="p-3 font-bold text-slate-900">${f1(x.l100)}</td><td class="p-3 font-bold text-slate-900">${f1(x.lv)}</td><td class="p-3 ${x.pannes ? 'text-rose-700' : 'text-slate-700'}">${x.pannes}</td><td class="p-3 font-black ${x.score >= 80 ? 'text-emerald-700' : x.score >= 60 ? 'text-amber-700' : 'text-rose-700'}">${x.score}</td><td class="p-3">${best && x === best ? '<span class="text-[10px] bg-amber-500 text-slate-950 px-2 py-0.5 rounded-full font-bold">À primer</span>' : ''}</td></tr>`).join('') : '<tr><td colspan="10" class="p-6 text-center text-slate-600">Aucun chauffeur. Ajoutez un camion avec son chauffeur.</td></tr>';\n}\nfunction openPanneModal() {\n  if (!S.fleet.length) return toast('Ajoutez d’abord un camion');\n  openModal(formWrap('Signaler une panne', 'panne', sel('Camion', 'fid', scopeFleet().map(f => [f.id, f.name + ' (' + f.plate + ')'])) + fld('Diagnostic / motif', 'diag', 'text', 'required') +\n    '<div class="grid grid-cols-2 gap-3">' + sel('Gravité', 'sev', [['Faible', 'Faible'], ['Moyenne', 'Moyenne'], ['Critique', 'Critique']]) + sel('Statut', 'st', [['En Réparation', 'En réparation'], ['En Attente Pièce', 'En attente de pièce'], ['Terminé', 'Terminé']]) + '</div>' + fld('Coût estimé (FCFA)', 'cost', 'number', 'min="0" value="0"'), 'Enregistrer la panne'));\n}\n\n/* ---------- CHANTIERS, DÉPENSES, BÂTIMENTS ---------- */\nconst spent = cid => S.expenses.filter(e => e.chantier === cid).reduce((s, e) => s + e.amount, 0);\nconst batPct = b => Math.round(PHASES.reduce((s, p) => s + (b.ph[p[0]] || 0), 0) / PHASES.length);\nfunction batTime(b) {\n  const p = batPct(b);\n  let leftTxt = 'Date non renseignée', leftBad = false;\n  if (b.prevision) { const l = daysLeft(b.prevision); leftBad = l < 0 && p < 100; leftTxt = p >= 100 ? 'Terminé' : l < 0 ? Math.abs(l) + ' jour(s) de retard' : l === 0 ? 'Dernier jour' : l + ' jour(s) restant(s)'; }\n  let proj = null, projTxt = 'Pas assez de données', warn = false;\n  if (p >= 100) projTxt = 'Terminé';\n  else if (b.debut && p > 0) {\n    const el = -daysLeft(b.debut);\n    if (el > 0) { proj = addDays(b.debut, Math.round(el / (p / 100))); const ec = b.prevision ? Math.round((new Date(proj + 'T12:00') - new Date(b.prevision + 'T12:00')) / 864e5) : 0; warn = ec > 0; projTxt = !b.prevision ? 'Sans prévision à comparer' : ec > 0 ? '≈ ' + ec + ' jour(s) après la prévision' : 'Dans les temps'; }\n  }\n  const late = p < 100 && (b.prevision ? daysLeft(b.prevision) < 0 : !!(b.livraison && b.livraison < day()));\n  return { leftTxt, leftBad, proj, projTxt, warn, late };\n}\nfunction renderChantiers() {\n  if (!$('batiments-grid') || !$('expenses-table-body') || !$('budget-box')) return; // section Chantiers retirée de la page\n  const sl = $('selectedChantierFilter');\n  if (!scopeChantiers().length) { if (sl) sl.innerHTML = '<option>Aucun chantier</option>'; selChantier = null; } else {\n    if (!scopeChantiers().find(c => c.id === selChantier)) selChantier = scopeChantiers()[0].id;\n    if (sl) sl.innerHTML = scopeChantiers().map(c => `<option value="${esc(c.id)}" ${c.id === selChantier ? 'selected' : ''}>${esc(c.nom)}</option>`).join('');\n  }\n  const c = S.chantiers.find(x => x.id === selChantier);\n  const L = S.expenses.filter(e => e.chantier === selChantier);\n  $('expenses-table-body').innerHTML = L.length ? L.map(e => `<tr class="hover:bg-slate-50"><td class="p-3 text-slate-500">${fr(e.date)}</td><td class="p-3 font-bold text-slate-900">${esc(e.title)}<div class="text-[10px] text-slate-500">${esc(e.cat || '')}</div></td><td class="p-3"><span class="text-[11px] text-purple-600 bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/20">${esc(e.source)}</span></td><td class="p-3 font-bold text-orange-600">${fm(e.amount)} FCFA</td><td class="p-3"><button onclick="delExpense(${e.id})" class="text-[10px] text-slate-500 hover:text-rose-600">Supprimer</button></td></tr>`).join('') : '<tr><td colspan="5" class="p-6 text-center text-slate-500">Aucune dépense pour ce chantier.</td></tr>';\n  const sp = c ? spent(c.id) : 0, bud = c ? c.budget : 0, pc = bud ? Math.min(100, Math.round(sp / bud * 100)) : 0;\n  $('budget-box').innerHTML = c ? `<div class="flex justify-between font-bold"><span class="text-slate-500">Budget alloué:</span><span class="text-slate-900">${fm(bud)} FCFA</span></div><div class="flex justify-between font-bold"><span class="text-slate-500">Total dépensé:</span><span class="text-orange-600">${fm(sp)} FCFA</span></div><div class="flex justify-between font-bold"><span class="text-slate-500">Reste:</span><span class="${bud - sp < 0 ? 'text-rose-600' : 'text-emerald-600'}">${fm(bud - sp)} FCFA</span></div><div class="w-full bg-slate-100 rounded-full h-2"><div class="${pc >= 90 ? 'bg-rose-500' : 'bg-orange-500'} h-2 rounded-full" style="width:${pc}%"></div></div><span class="text-[10px] text-slate-500">${pc}% du budget consommé</span>` : '<span class="text-slate-500">Créez un chantier pour suivre son budget.</span>';\n  if (S.co && curRole !== 'ceo') $('budget-box').innerHTML = '<div class="text-slate-600">Le budget et les marges sont visibles uniquement par la direction.</div>';\n  const B = S.batiments.filter(b => b.chantier === selChantier);\n  $('batiments-grid').innerHTML = B.length ? B.map(b => {\n    const p = batPct(b), t = batTime(b);\n    const badge = p >= 100 ? '<span class="text-[10px] bg-emerald-500/20 text-emerald-700 border border-emerald-500/30 px-2 py-0.5 rounded-full font-bold">Terminé</span>' : t.late ? '<span class="text-[10px] bg-rose-500/20 text-rose-700 border border-rose-500/30 px-2 py-0.5 rounded-full font-bold whitespace-nowrap">En retard</span>' : '';\n    return `<div class="bg-slate-50 border ${t.late ? 'border-rose-500/40' : 'border-slate-200'} rounded-xl overflow-hidden"><img src="images/immeubles.jpg" alt="" loading="lazy" class="w-full h-20 object-cover"><div class="p-4 space-y-3">\n      <div class="flex justify-between items-start gap-2"><div class="space-y-0.5"><div class="font-bold text-slate-900 text-sm">${esc(b.nom)}</div><div class="text-[11px] text-slate-600">Niveau en cours : <b class="text-slate-900">${b.niveauActuel == null ? '—' : b.niveauActuel} / ${b.niveaux || '?'}</b></div><div class="text-[11px] text-slate-600">Ingénieur chargé : <b class="text-slate-900">${esc(b.ingenieur || '—')}</b></div><div class="text-[11px] text-slate-600">Chef de chantier : ${esc(b.resp || '—')}</div></div>${badge}</div>\n      <div><div class="flex justify-between text-[11px] font-semibold mb-1"><span class="text-slate-600">Avancement global</span><span class="text-orange-700">${p}%</span></div><div class="w-full bg-slate-100 rounded-full h-2.5"><div class="bg-orange-500 h-2.5 rounded-full" style="width:${p}%"></div></div></div>\n      <div class="grid grid-cols-7 gap-1">${PHASES.map(ph => `<div title="${esc(ph[1])} : ${b.ph[ph[0]] || 0}%" class="h-1.5 rounded bg-slate-100 overflow-hidden"><div class="h-full bg-emerald-500" style="width:${b.ph[ph[0]] || 0}%"></div></div>`).join('')}</div>\n      <div class="grid grid-cols-2 gap-2 text-[11px]">\n        <div class="bg-slate-100 rounded-lg p-2"><div class="text-slate-600">Prévision de l’ingénieur</div><div class="text-slate-900 font-bold">${fr(b.prevision)}</div><div class="font-semibold ${t.leftBad ? 'text-rose-700' : 'text-emerald-700'}">${t.leftTxt}</div></div>\n        <div class="bg-slate-100 rounded-lg p-2"><div class="text-slate-600">Projection selon l’avancement</div><div class="text-slate-900 font-bold">${t.proj ? fr(t.proj) : '—'}</div><div class="font-semibold ${t.warn ? 'text-rose-700' : 'text-emerald-700'}">${t.projTxt}</div></div>\n      </div>\n      ${b.note ? `<div class="text-[11px] text-slate-700 bg-white rounded-lg p-2"><i class="fa-solid fa-comment-dots text-orange-600"></i> ${esc(b.note)}</div>` : ''}\n      <div class="text-[10px] text-slate-500">Début : ${fr(b.debut)} · Livraison contractuelle : ${fr(b.livraison)}</div>\n      <div class="flex gap-2"><button onclick="openBatUpdate('${b.id}')" class="flex-1 bg-orange-500 hover:bg-orange-600 text-white text-[11px] font-bold py-1.5 rounded-lg">Mettre à jour l’avancement</button><button onclick="openBatModal('${b.id}')" class="px-2.5 text-[11px] bg-slate-200 text-slate-900 rounded-lg">Modifier</button><button onclick="delBat('${b.id}')" class="px-2.5 text-[11px] bg-slate-100 text-slate-600 rounded-lg">Retirer</button></div></div></div>`;\n  }).join('') : '<div class="md:col-span-2 xl:col-span-3 text-center text-slate-500 text-xs p-6">Aucun bâtiment pour ce chantier. Cliquez sur « Ajouter un bâtiment ».</div>';\n  if (c && B.length) {\n    const avg = Math.round(B.reduce((s, b) => s + batPct(b), 0) / B.length), fins = B.map(b => b.prevision).filter(Boolean).sort(), last = fins[fins.length - 1], dl = last ? daysLeft(last) : 0;\n    $('budget-box').innerHTML += `<div class="border-t border-slate-300 pt-2 mt-2 space-y-1"><div class="flex justify-between font-bold"><span class="text-slate-600">Avancement moyen des bâtiments :</span><span class="text-slate-900">${avg}%</span></div>${last ? `<div class="flex justify-between font-bold"><span class="text-slate-600">Fin prévue (ingénieur) :</span><span class="${dl < 0 ? 'text-rose-700' : 'text-slate-900'}">${fr(last)} · ${dl < 0 ? Math.abs(dl) + ' j de retard' : dl + ' j restants'}</span></div>` : ''}</div>`;\n  }\n}\nfunction openChantierModal() {\n  if (access() === 'sub' && S.chantiers.length >= S.sub.chantiers) return toast('Votre abonnement couvre ' + S.sub.chantiers + ' chantier(s). Augmentez-le pour en ajouter.');\n  openModal(formWrap('Nouveau chantier', 'chantier', fld('Nom du chantier', 'nom', 'text', 'required placeholder="Chantier Lycée de Mbao"') + fld('Budget alloué (FCFA)', 'budget', 'number', 'required min="0"'), 'Créer le chantier'));\n}\nfunction openExpenseModal() {\n  if (!S.chantiers.length) return toast('Créez d’abord un chantier');\n  openModal(formWrap('Ajouter une dépense', 'expense', sel('Chantier', 'chantier', scopeChantiers().map(c => [c.id, c.nom])).replace(`value="${esc(selChantier)}"`, `value="${esc(selChantier)}" selected`) + fld('Désignation', 'title', 'text', 'required placeholder="100 sacs de ciment"') +\n    '<div class="grid grid-cols-2 gap-3">' + sel('Catégorie', 'cat', [['Matériaux', 'Matériaux'], ['Carburant', 'Carburant'], ['Main d’œuvre', 'Main d’œuvre'], ['Autres', 'Autres']]) + fld('Montant (FCFA)', 'amount', 'number', 'required min="0"') + '</div>' + fld('Provenance (quincaillerie, fournisseur…)', 'source', 'text', 'placeholder="Fournisseur extérieur"'), 'Enregistrer la dépense'));\n}\nfunction delExpense(id) { if (!confirm('Supprimer cette dépense ?')) return; S.expenses = S.expenses.filter(e => e.id != id); save(); renderAll(); }\nfunction openBatModal(id) {\n  if (!S.chantiers.length) return toast('Créez d’abord un chantier');\n  const b = S.batiments.find(x => x.id === id) || {};\n  openModal(formWrap(id ? 'Modifier le bâtiment' : 'Nouveau bâtiment', 'bat',\n    `<input type="hidden" name="id" value="${esc(b.id || '')}"><input type="hidden" name="chantier" value="${esc(b.chantier || selChantier)}">` +\n    fld('Nom du bâtiment', 'nom', 'text', `required value="${esc(b.nom || '')}" placeholder="Bâtiment B, R+3"`) +\n    '<div class="grid grid-cols-2 gap-3">' +\n    fld('Nombre de niveaux (R+2 = 3)', 'niveaux', 'number', `min="1" value="${b.niveaux || ''}"`) +\n    fld('Niveau en cours de construction', 'niveauActuel', 'number', `min="0" value="${b.niveauActuel == null ? '' : b.niveauActuel}"`) +\n    fld('Ingénieur chargé', 'ingenieur', 'text', `value="${esc(b.ingenieur || '')}"`) +\n    fld('Chef de chantier', 'resp', 'text', `value="${esc(b.resp || '')}"`) +\n    fld('Date de début', 'debut', 'date', `value="${b.debut || ''}"`) +\n    fld('Prévision de l’ingénieur (fin)', 'prevision', 'date', `value="${b.prevision || ''}"`) + '</div>' +\n    fld('Livraison contractuelle', 'livraison', 'date', `value="${b.livraison || ''}"`) +\n    fld('Observation de l’ingénieur (facultatif)', 'note', 'text', `value="${esc(b.note || '')}" placeholder="Ex. fin du gros œuvre avant la saison des pluies"`),\n    id ? 'Enregistrer' : 'Ajouter le bâtiment'));\n}\nfunction openBatUpdate(id) {\n  const b = S.batiments.find(x => x.id === id); if (!b) return;\n  openModal(`<h3 class="text-base font-bold text-slate-900">${esc(b.nom)}</h3><p class="text-xs text-slate-500">Indiquez l’avancement de chaque étape (0 à 100 %).</p><form data-f="batup" class="space-y-3"><input type="hidden" name="id" value="${b.id}">${fld('Niveau en cours de construction (sur ' + (b.niveaux || '?') + ' niveaux)', 'niveauActuel', 'number', `min="0" value="${b.niveauActuel == null ? '' : b.niveauActuel}"`)}` +\n    PHASES.map(p => `<label class="block text-xs font-semibold text-slate-600"><span class="flex justify-between"><span>${p[1]}</span><span class="text-orange-600">${b.ph[p[0]] || 0} %</span></span><input type="range" name="${p[0]}" min="0" max="100" step="5" value="${b.ph[p[0]] || 0}" oninput="this.previousElementSibling.lastElementChild.textContent=this.value+' %'" class="w-full accent-orange-500"></label>`).join('') +\n    '<div class="flex justify-end gap-2 pt-2"><button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl text-xs bg-slate-100 text-slate-600">Annuler</button><button class="px-4 py-2 rounded-xl text-xs bg-yellow-400 text-slate-950 font-bold">Enregistrer</button></div></form>');\n}\nfunction delBat(id) { if (!confirm('Retirer ce bâtiment ?')) return; S.batiments = S.batiments.filter(b => b.id !== id); save(); renderAll(); }\nfunction renderChantierExpenses() { const f = $('selectedChantierFilter'); if (!f) return; selChantier = f.value; renderChantiers(); }\n\n/* ---------- TABLEAU DE BORD CEO ---------- */\nfunction renderCeo() {\n  const budget = S.chantiers.reduce((s, c) => s + c.budget, 0), dep = S.expenses.reduce((s, e) => s + e.amount, 0);\n  const m = day().slice(0, 7), maint = S.pannes.filter(p => (p.date || '').startsWith(m)).reduce((s, p) => s + p.cost, 0), np = S.pannes.filter(p => (p.date || '').startsWith(m)).length;\n  const reste = budget - dep;\n  const ventesMois = S.sales.filter(s => (s.date || '').startsWith(m)).reduce((s, x) => s + x.total, 0);\n  const nbFactures = S.sales.filter(s => (s.date || '').startsWith(m)).length;\n\n  // 1. KPI Cards Épurées & Visuelles avec Icônes Parlantes\n  const kpiCard = (icon, iconBg, iconColor, label, value, suffix, valueColor, sub) =>\n    `<div class="bg-white border border-slate-200 rounded-2xl p-5 space-y-3 hover:shadow-md transition">\n      <div class="flex items-center gap-3">\n        <span class="w-12 h-12 rounded-2xl ${iconBg} ${iconColor} flex items-center justify-center text-xl shadow-sm">\n          <i class="${icon}"></i>\n        </span>\n        <span class="text-xs font-bold text-slate-500 uppercase tracking-wide">${label}</span>\n      </div>\n      <div class="text-2xl sm:text-3xl font-black ${valueColor}">${value} <span class="text-xs font-normal text-slate-500">${suffix}</span></div>\n      <div class="text-xs text-slate-500">${sub}</div>\n    </div>`;\n\n  $('ceo-kpis').innerHTML =\n    kpiCard('fa-solid fa-wallet', 'bg-blue-500/15', 'text-blue-600', 'Budget Total Chantiers', fm(budget), 'FCFA', 'text-slate-900', '<i class="fa-solid fa-building text-blue-500"></i> ' + S.chantiers.length + ' chantier' + (S.chantiers.length > 1 ? 's' : '')) +\n    kpiCard('fa-solid fa-arrow-trend-down', 'bg-rose-500/15', 'text-rose-600', 'Dépenses Engagées', fm(dep), 'FCFA', 'text-rose-600', (budget ? '<div class="w-full bg-slate-100 rounded-full h-1.5 mt-1"><div class="bg-rose-500 h-1.5 rounded-full" style="width:' + Math.min(100, Math.round(dep / budget * 100)) + '%"></div></div><span class="text-[10px]">' + Math.round(dep / budget * 100) + '% du budget consommé</span>' : '—')) +\n    kpiCard('fa-solid fa-piggy-bank', 'bg-emerald-500/15', 'text-emerald-600', 'Reste à Dépenser', fm(reste), 'FCFA', reste < 0 ? 'text-rose-600' : 'text-emerald-600', reste < 0 ? '<span class="text-rose-600 font-bold"><i class="fa-solid fa-triangle-exclamation"></i> Attention : dépassement</span>' : '<i class="fa-solid fa-check-circle text-emerald-500"></i> Dans les limites du budget') +\n    kpiCard('fa-solid fa-wrench', 'bg-amber-500/15', 'text-amber-600', 'Entretien Flotte (Mois)', fm(maint), 'FCFA', 'text-amber-600', '<i class="fa-solid fa-truck text-amber-500"></i> ' + np + ' panne' + (np > 1 ? 's' : '') + ' enregistrée' + (np > 1 ? 's' : ''));\n\n  // 2. Santé des Chantiers (Suivi visuel direct)\n  const healthEl = $('ceo-chantiers-health');\n  if (healthEl) {\n    if (S.chantiers.length) {\n      healthEl.innerHTML = S.chantiers.map(c => {\n        const sp = spent(c.id);\n        const pc = c.budget ? Math.min(100, Math.round(sp / c.budget * 100)) : 0;\n        const over = sp > c.budget;\n        const barColor = pc >= 90 ? 'bg-rose-500' : pc >= 70 ? 'bg-amber-500' : 'bg-emerald-500';\n        const badge = over\n          ? '<span class="inline-flex items-center gap-1 bg-rose-50 text-rose-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-rose-200"><i class="fa-solid fa-circle-exclamation"></i> Dépassement</span>'\n          : pc >= 90\n          ? '<span class="inline-flex items-center gap-1 bg-amber-50 text-amber-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-200"><i class="fa-solid fa-triangle-exclamation"></i> Budget à 90%</span>'\n          : '<span class="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-200"><i class="fa-solid fa-circle-check"></i> Budget maîtrisé</span>';\n\n        return `<div class="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2">\n          <div class="flex items-center justify-between gap-2">\n            <div class="font-bold text-slate-900 text-sm truncate">${esc(c.nom.replace('Chantier ', ''))}</div>\n            ${badge}\n          </div>\n          <div class="w-full bg-slate-200 rounded-full h-2.5">\n            <div class="${barColor} h-2.5 rounded-full transition-all" style="width:${pc}%"></div>\n          </div>\n          <div class="flex justify-between items-center text-[11px] text-slate-600 pt-0.5">\n            <span>Dépensé : <b class="text-slate-900">${fm(sp)}</b> FCFA</span>\n            <span>Reste : <b class="${c.budget - sp < 0 ? 'text-rose-600' : 'text-emerald-700'}">${fm(c.budget - sp)}</b> FCFA</span>\n          </div>\n        </div>`;\n      }).join('');\n    } else {\n      healthEl.innerHTML = '<div class="text-center text-xs text-slate-500 py-6"><i class="fa-solid fa-building text-slate-400 text-2xl mb-2"></i><br>Aucun chantier actif. Cliquez sur « Nouveau chantier » pour démarrer le suivi.</div>';\n    }\n  }\n\n  // 3. Vue Rapide de l'Entreprise (Flotte, Carburant, Stock, Ventes)\n  const quickEl = $('ceo-quick-view');\n  if (quickEl) {\n    const fleetTotal = S.fleet.length;\n    const enPanne = S.fleet.filter(f => f.status === 'En Panne').length;\n    const carbMois = S.fleet.reduce((s, f) => s + (f.carb || []).filter(x => (x.d || '').startsWith(m)).reduce((a, x) => a + (x.amount || 0), 0), 0);\n    const stockItems = S.inventory.length;\n    const lowStock = S.inventory.filter(i => i.qty <= (i.seuil || 0)).length;\n\n    const qRow = (icon, iconBg, label, val, sub) =>\n      `<div class="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl p-3">\n        <span class="w-10 h-10 rounded-xl ${iconBg} flex items-center justify-center text-lg shrink-0">${icon}</span>\n        <div class="flex-1 min-w-0">\n          <div class="text-xs text-slate-500 font-semibold">${label}</div>\n          <div class="text-base font-black text-slate-900">${val}</div>\n        </div>\n        <div class="text-[11px] text-slate-500 text-right shrink-0">${sub}</div>\n      </div>`;\n\n    quickEl.innerHTML =\n      qRow('<i class="fa-solid fa-truck text-amber-600"></i>', 'bg-amber-500/15', 'Flotte Camions', fleetTotal + ' véhicule' + (fleetTotal > 1 ? 's' : ''), enPanne > 0 ? '<span class="text-rose-600 font-bold">' + enPanne + ' en panne</span>' : '<span class="text-emerald-700 font-bold"><i class="fa-solid fa-check"></i> Opérationnels</span>') +\n      qRow('<i class="fa-solid fa-gas-pump text-orange-600"></i>', 'bg-orange-500/15', 'Gazole ce mois', fm(carbMois) + ' FCFA', 'Consommation globale') +\n      qRow('<i class="fa-solid fa-boxes-stacked text-purple-600"></i>', 'bg-purple-500/15', 'Articles en Stock', stockItems + ' référence' + (stockItems > 1 ? 's' : ''), lowStock > 0 ? '<span class="text-amber-700 font-bold">' + lowStock + ' en alerte stock</span>' : '<span class="text-emerald-700 font-bold">Stocks suffisants</span>') +\n      qRow('<i class="fa-solid fa-cash-register text-emerald-600"></i>', 'bg-emerald-500/15', 'Ventes du Mois', fm(ventesMois) + ' FCFA', nbFactures + ' facture' + (nbFactures > 1 ? 's' : '') + ' émise' + (nbFactures > 1 ? 's' : ''));\n  }\n\n  // 4. Alertes et Points d'Attention Immédiats\n  const alertsEl = $('ceo-alerts');\n  if (alertsEl) {\n    const alerts = [];\n    S.chantiers.forEach(c => {\n      const sp = spent(c.id);\n      if (sp > c.budget) alerts.push({ icon: 'fa-solid fa-circle-exclamation', color: 'text-rose-600', bg: 'bg-rose-50 border-rose-200', text: '<b>Chantier ' + esc(c.nom) + '</b> : budget dépassé de <b class="text-rose-700">' + fm(sp - c.budget) + ' FCFA</b>.' });\n      else if (c.budget && sp / c.budget >= 0.9) alerts.push({ icon: 'fa-solid fa-triangle-exclamation', color: 'text-amber-600', bg: 'bg-amber-50 border-amber-200', text: '<b>Chantier ' + esc(c.nom) + '</b> : <b class="text-amber-700">' + Math.round(sp / c.budget * 100) + '%</b> du budget alloué a déjà été dépensé.' });\n    });\n    S.batiments.forEach(b => {\n      const t = batTime(b);\n      if (t.late) alerts.push({ icon: 'fa-solid fa-clock', color: 'text-rose-600', bg: 'bg-rose-50 border-rose-200', text: '<b>Bâtiment ' + esc(b.nom) + '</b> : retard constaté (' + t.leftTxt + ').' });\n    });\n    const unresolvedPannes = S.pannes.filter(p => p.status !== 'Terminé');\n    if (unresolvedPannes.length) alerts.push({ icon: 'fa-solid fa-wrench', color: 'text-amber-600', bg: 'bg-amber-50 border-amber-200', text: '<b>' + unresolvedPannes.length + ' camion' + (unresolvedPannes.length > 1 ? 's' : '') + ' en panne</b> : réparation requise pour relancer les rotations.' });\n    const lowItems = S.inventory.filter(i => i.qty <= (i.seuil || 0));\n    if (lowItems.length) alerts.push({ icon: 'fa-solid fa-boxes-stacked', color: 'text-purple-600', bg: 'bg-purple-50 border-purple-200', text: '<b>Stock faible</b> sur ' + lowItems.slice(0, 3).map(i => esc(i.name)).join(', ') + (lowItems.length > 3 ? '…' : '') + '.' });\n\n    if (alerts.length) {\n      alertsEl.innerHTML = alerts.map(a => `<div class="flex items-start gap-3 ${a.bg} border rounded-xl p-3 text-xs">\n        <i class="${a.icon} ${a.color} mt-0.5 text-sm"></i>\n        <span class="text-slate-800">${a.text}</span>\n      </div>`).join('');\n    } else {\n      alertsEl.innerHTML = '<div class="flex items-center gap-3 bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-xs"><i class="fa-solid fa-circle-check text-emerald-600 text-lg"></i><span class="text-emerald-800 font-bold">Situation excellente : tous les chantiers sont dans les clous et la flotte est opérationnelle.</span></div>';\n    }\n  }\n}\n\n/* ---------- VOYAGES, LIEUX & ROTATIONS FLOTTE ---------- */\nfunction openQuickTripModal() {\n  const fl = scopeFleet();\n  if (!fl.length) return toast('Ajoutez d’abord un camion à votre flotte.');\n  if (fl.length === 1) return openTripModal(fl[0].id);\n  openModal(`<h3 class="text-base font-bold text-slate-900">Choisir le camion pour le voyage</h3>\n    <p class="text-xs text-slate-600 mb-3">Sélectionnez le camion pour lequel vous saisissez des tours et les lieux de rotation.</p>\n    <div class="space-y-2">\n      ${fl.map(f => `\n        <button onclick="closeModal(); openTripModal(${f.id})" class="w-full text-left p-3 rounded-xl border border-slate-200 hover:border-amber-500 hover:bg-amber-50 transition flex justify-between items-center cursor-pointer">\n          <div>\n            <div class="font-bold text-slate-900 text-sm">${esc(f.name)} (${esc(f.plate)})</div>\n            <div class="text-xs text-slate-500">Chauffeur : ${esc(f.driver)}</div>\n          </div>\n          <i class="fa-solid fa-arrow-right text-amber-600"></i>\n        </button>`).join('')}\n    </div>\n    <div class="flex justify-end pt-3">\n      <button onclick="closeModal()" class="px-4 py-2 rounded-xl text-xs bg-slate-100 text-slate-600 cursor-pointer">Fermer</button>\n    </div>`);\n}\n\nfunction openTruckTripsModal(id) {\n  const f = S.fleet.find(x => x.id == id); if (!f) return;\n  const trips = f.trips || [];\n  openModal(`\n    <div class="flex justify-between items-center border-b border-slate-200 pb-3">\n      <div>\n        <h3 class="text-base font-bold text-slate-900">Historique des voyages : ${esc(f.name)}</h3>\n        <p class="text-xs text-slate-500">${esc(f.plate)} • Chauffeur : ${esc(f.driver)}</p>\n      </div>\n      <button onclick="closeModal(); openTripModal(${f.id})" class="bg-amber-600 hover:bg-amber-500 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1.5 cursor-pointer">\n        <i class="fa-solid fa-plus"></i> Saisir un tour\n      </button>\n    </div>\n    <div class="max-h-96 overflow-y-auto space-y-2.5 my-3 custom-scrollbar pr-1">\n      ${trips.length ? trips.map((t, idx) => `\n        <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs space-y-1.5">\n          <div class="flex justify-between items-center">\n            <span class="font-bold text-slate-900">${fr(t.d)}</span>\n            <span class="bg-amber-100 text-amber-800 font-bold px-2 py-0.5 rounded-full text-[10px]">${t.voyages || 1} tour${(t.voyages || 1) > 1 ? 's' : ''} · ${fm(t.km || 0)} km</span>\n          </div>\n          <div class="flex items-center gap-1.5 text-slate-800 font-medium">\n            <i class="fa-solid fa-location-dot text-amber-600 text-[10px]"></i>\n            <span>${esc(t.depart || 'Lieu départ non précisé')}</span>\n            <i class="fa-solid fa-arrow-right text-[10px] text-slate-400"></i>\n            <span>${esc(t.arrivee || 'Lieu arrivée non précisé')}</span>\n          </div>\n          ${t.obs ? `<div class="text-[11px] text-slate-500 italic bg-white p-1.5 rounded border border-slate-100">${esc(t.obs)}</div>` : ''}\n          <div class="flex justify-end pt-1">\n            <button onclick="delTrip(${f.id}, ${idx})" class="text-[11px] text-rose-600 hover:underline cursor-pointer">Supprimer ce voyage</button>\n          </div>\n        </div>\n      `).join('') : '<div class="text-center text-xs text-slate-500 py-6">Aucun voyage enregistré pour ce camion.</div>'}\n    </div>\n    <div class="flex justify-end pt-2 border-t border-slate-200">\n      <button onclick="closeModal()" class="px-4 py-2 rounded-xl text-xs bg-slate-100 text-slate-600 cursor-pointer">Fermer</button>\n    </div>\n  `);\n}\n\nfunction delTrip(truckId, idx) {\n  if (!confirm('Voulez-vous supprimer ce voyage / rotation ?')) return;\n  const f = S.fleet.find(x => x.id == truckId);\n  if (!f || !f.trips) return;\n  f.trips.splice(idx, 1);\n  save();\n  renderAll();\n  closeModal();\n  toast('Voyage supprimé');\n}\n\nfunction renderTripsJournal() {\n  const selFilter = $('filter-trips-truck');\n  const fl = scopeFleet();\n  if (selFilter) {\n    const curVal = selFilter.value || 'all';\n    selFilter.innerHTML = '<option value="all">Tous les camions</option>' + fl.map(f => `<option value="${f.id}" ${String(curVal) === String(f.id) ? 'selected' : ''}>${esc(f.name)} (${esc(f.plate)})</option>`).join('');\n  }\n  const filterVal = selFilter ? selFilter.value : 'all';\n  const targetFleet = filterVal === 'all' ? fl : fl.filter(f => String(f.id) === String(filterVal));\n\n  const allTrips = [];\n  targetFleet.forEach(f => {\n    (f.trips || []).forEach((t, idx) => {\n      allTrips.push({\n        truckId: f.id,\n        truckName: f.name,\n        truckPlate: f.plate,\n        driver: f.driver,\n        tripIdx: idx,\n        d: t.d || '',\n        voyages: t.voyages || 1,\n        km: t.km || 0,\n        depart: t.depart || '—',\n        arrivee: t.arrivee || '—',\n        obs: t.obs || ''\n      });\n    });\n  });\n\n  allTrips.sort((a, b) => (b.d || '').localeCompare(a.d || ''));\n\n  const tbody = $('trips-journal-body');\n  if (!tbody) return;\n  tbody.innerHTML = allTrips.length ? allTrips.map(t => `\n    <tr class="hover:bg-slate-50 transition">\n      <td class="p-3 font-semibold text-slate-900 whitespace-nowrap">${fr(t.d)}</td>\n      <td class="p-3">\n        <div class="font-bold text-slate-900">${esc(t.truckName)}</div>\n        <div class="text-[10px] text-slate-500">${esc(t.truckPlate)}</div>\n      </td>\n      <td class="p-3 font-medium text-slate-700">${esc(t.driver)}</td>\n      <td class="p-3">\n        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800">\n          ${t.voyages} tour${t.voyages > 1 ? 's' : ''}\n        </span>\n      </td>\n      <td class="p-3">\n        <div class="flex items-center gap-1.5 font-medium text-slate-900">\n          <i class="fa-solid fa-location-dot text-amber-600 text-[10px]"></i>\n          <span>${esc(t.depart)}</span>\n        </div>\n      </td>\n      <td class="p-3">\n        <div class="flex items-center gap-1.5 font-medium text-slate-900">\n          <i class="fa-solid fa-flag-checkered text-emerald-600 text-[10px]"></i>\n          <span>${esc(t.arrivee)}</span>\n        </div>\n      </td>\n      <td class="p-3 text-slate-700 whitespace-nowrap">${t.km ? fm(t.km) + ' km' : '—'}</td>\n      <td class="p-3 text-slate-500 italic max-w-xs truncate">${esc(t.obs || '—')}</td>\n      <td class="p-3 text-right">\n        <button onclick="delTrip(${t.truckId}, ${t.tripIdx})" class="text-slate-400 hover:text-rose-600 transition p-1 cursor-pointer" title="Supprimer ce voyage">\n          <i class="fa-solid fa-trash-can"></i>\n        </button>\n      </td>\n    </tr>\n  `).join('') : '<tr><td colspan="9" class="p-6 text-center text-slate-500">Aucun voyage enregistré. Cliquez sur « Saisir un voyage / tour » pour enregistrer les rotations et les lieux.</td></tr>';\n}\n\n/* ---------- AVIS DES UTILISATEURS ---------- */\nfunction renderReviews() {\n  const container = $('reviews-container');\n  if (!container) return;\n  const list = S.reviews || [];\n  if (!list.length) {\n    container.innerHTML = '<div class="col-span-2 text-center text-xs text-slate-500 p-6">Aucun avis pour le moment. Soyez le premier à donner votre avis !</div>';\n    return;\n  }\n  container.innerHTML = list.map(r => {\n    const initials = (r.author || 'M').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();\n    const stars = Array.from({ length: 5 }, (_, i) => `<i class="fa-solid fa-star ${i < (r.rating || 5) ? 'text-amber-400' : 'text-slate-200'}"></i>`).join('');\n    return `\n      <div class="bg-white border border-slate-200 rounded-2xl p-5 space-y-3.5 hover:shadow-md transition">\n        <div class="flex items-start justify-between gap-3">\n          <div class="flex items-center space-x-3">\n            <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-orange-500 to-amber-600 text-white font-black text-sm flex items-center justify-center shadow-md shadow-orange-500/20 shrink-0">\n              ${initials}\n            </div>\n            <div>\n              <div class="flex items-center gap-2 flex-wrap">\n                <span class="font-bold text-slate-900 text-sm">${esc(r.author)}</span>\n                <span class="inline-flex items-center gap-1 ${r.isExample ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-blue-50 text-blue-800 border-blue-200'} text-[10px] font-bold px-2 py-0.5 rounded-full border">\n                  <i class="fa-solid ${r.isExample ? 'fa-flask text-amber-600' : 'fa-user-check text-blue-600'} text-[9px]"></i> ${r.isExample ? 'Exemple illustratif' : 'Retour d’expérience'}\n                </span>\n              </div>\n              <div class="text-xs text-slate-500">${esc(r.role)} • <span class="text-slate-700 font-semibold">${esc(r.company)}</span></div>\n            </div>\n          </div>\n          <div class="flex items-center text-xs space-x-0.5 shrink-0">\n            ${stars}\n          </div>\n        </div>\n\n        <p class="text-xs text-slate-700 leading-relaxed italic bg-slate-50/70 p-3 rounded-xl border border-slate-100">\n          « ${esc(r.text)} »\n        </p>\n\n        <div class="flex items-center justify-between text-[11px] text-slate-400 pt-1 border-t border-slate-100">\n          <span class="flex items-center gap-1 text-slate-600 font-medium">\n            <i class="fa-solid fa-location-dot text-orange-500"></i> ${esc(r.city || 'Sénégal')}\n          </span>\n          <span class="bg-orange-50 text-orange-700 font-bold px-2 py-0.5 rounded-full text-[10px] border border-orange-200/50">\n            ${esc(r.tag || 'BTP & Transport')}\n          </span>\n          <span>${fr(r.date)}</span>\n        </div>\n      </div>\n    `;\n  }).join('');\n}\n\nfunction openReviewModal() {\n  openModal(formWrap('Partager votre avis d’utilisateur MargeUp', 'review',\n    `<p class="text-xs text-slate-600">Votre retour d'expérience aide les entrepreneurs du BTP, transporteurs et quincaillers au Sénégal.</p>\n     <div class="grid grid-cols-2 gap-3">\n       ${fld('Votre nom & prénom *', 'author', 'text', 'required placeholder="Ex. Cheikh Oumar Diop"')}\n       ${fld('Entreprise / Société *', 'company', 'text', 'required placeholder="Ex. Touba BTP SARL"')}\n     </div>\n     <div class="grid grid-cols-2 gap-3">\n       ${fld('Votre fonction / poste *', 'role', 'text', 'required placeholder="Ex. Directeur des Travaux, Gérant..."')}\n       ${sel('Ville / Région *', 'city', [\n         ['Dakar', 'Dakar'],\n         ['Diamniadio', 'Diamniadio'],\n         ['Thiès', 'Thiès'],\n         ['Rufisque', 'Rufisque'],\n         ['Mbour', 'Mbour'],\n         ['Saint-Louis', 'Saint-Louis'],\n         ['Kaolack', 'Kaolack'],\n         ['Ziguinchor', 'Ziguinchor'],\n         ['Autre région', 'Autre région']\n       ])}\n     </div>\n     <div class="grid grid-cols-2 gap-3">\n       ${sel('Note globale *', 'rating', [\n         ['5', '⭐⭐⭐⭐⭐ (5/5 Excellent)'],\n         ['4', '⭐⭐⭐⭐ (4/5 Très bon)'],\n         ['3', '⭐⭐⭐ (3/5 Bon)'],\n         ['2', '⭐⭐ (2/5 Moyen)'],\n         ['1', '⭐ (1/5 À améliorer)']\n       ])}\n       ${sel('Module principal utilisé', 'tag', [\n         ['Flotte & Carburant', 'Flotte & Carburant'],\n         ['Transport & Rotations', 'Transport & Rotations'],\n         ['Quincaillerie & Vente', 'Quincaillerie & Vente'],\n         ['Chantiers & BTP', 'Chantiers & BTP'],\n         ['Direction & Marges', 'Direction & Marges']\n       ])}\n     </div>\n     <label class="block text-xs font-semibold text-slate-500">\n       Votre avis / retour d'expérience *\n       <textarea name="text" required rows="3" placeholder="Racontez comment MargeUp vous aide à contrôler vos camions, vos matériaux ou vos marges..." class="${INPUT} mt-1"></textarea>\n     </label>`,\n    'Publier mon avis'));\n}\n\n/* ---------- AFFICHAGE GÉNÉRAL ---------- */\nfunction renderDemoBar() {\n  const el = $('demoBar');\n  if (!el) return;\n  if (S.demo) {\n    el.innerHTML = `<div class="mb-6 bg-gradient-to-r from-amber-50 via-orange-50 to-amber-50 border border-amber-300 rounded-2xl p-4 text-xs text-amber-900 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3">\n      <div class="flex items-center gap-3">\n        <span class="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold text-sm shadow-sm shrink-0">\n          <i class="fa-solid fa-flask"></i>\n        </span>\n        <div>\n          <div class="font-bold text-sm text-slate-900 flex items-center gap-2">\n            <span>Mode Démonstration Interactive</span>\n            <span class="bg-amber-200 text-amber-900 font-extrabold text-[10px] px-2 py-0.5 rounded-full uppercase">Données Fictives d’Exemple</span>\n          </div>\n          <p class="text-slate-600 text-[11px] mt-0.5">Vous testez l’application avec un jeu de données fictif (quincaillerie, camions, factures d'exemple). Aucune donnée n'affecte une vraie entreprise.</p>\n        </div>\n      </div>\n      <div class="flex flex-wrap items-center gap-2 shrink-0">\n        <button onclick="openCompanyModal()" class="bg-yellow-400 hover:bg-yellow-300 text-slate-950 font-bold shadow-md px-3.5 py-2 rounded-xl text-xs transition shadow-sm cursor-pointer flex items-center gap-1.5">\n          <i class="fa-solid fa-building"></i> <span>Créer mon espace réel (15j gratuits)</span>\n        </button>\n        <button onclick="clearDemo()" class="bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold px-3 py-2 rounded-xl text-xs transition cursor-pointer flex items-center gap-1">\n          <i class="fa-solid fa-broom text-slate-500"></i> <span>Vider les exemples</span>\n        </button>\n      </div>\n    </div>`;\n  } else if (S.co) {\n    el.innerHTML = `<div class="mb-4 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl px-4 py-2 text-xs flex flex-wrap items-center justify-between gap-2 shadow-sm">\n      <span class="flex items-center gap-2 font-medium">\n        <i class="fa-solid fa-circle-check text-emerald-600"></i>\n        <span>Espace Réel Entreprise : <b class="font-bold text-slate-900">${esc(S.co.nom)}</b> (${esc(S.co.ville || 'Sénégal')})</span>\n      </span>\n      <div class="flex items-center gap-2 text-[11px]">\n        <button onclick="activateDemoMode()" class="text-orange-600 hover:text-orange-700 font-bold underline cursor-pointer">\n          Recharger les données de démonstration\n        </button>\n      </div>\n    </div>`;\n  } else {\n    el.innerHTML = '';\n  }\n}\n\nfunction startDemoMode() {\n  if (!S.inventory.length && !S.fleet.length) {\n    Object.assign(S, seed());\n  }\n  S.demo = true;\n  save();\n  renderAll();\n  switchTab('ceo');\n  toast('Mode Démonstration actif avec données d’exemple');\n}\n\nfunction activateDemoMode() {\n  if (confirm('Recharger les données de démonstration (exemples fictifs) ?')) {\n    startDemoMode();\n  }\n}\n\nfunction clearDemo() {\n  if (!confirm('Effacer les données d’exemple et commencer avec les vôtres ?')) return;\n  Object.assign(S, { demo: false, inventory: [], sales: [], pannes: [], expenses: [], fleet: [], chantiers: [], batiments: [], seq: 0 }); save(); renderAll();\n}\nfunction renderAll() {\n  const coBtn = $('coBtn');\n  if (coBtn) {\n    coBtn.innerHTML = `<i class="fa-solid fa-building text-orange-600"></i> ${esc(S.co ? S.co.nom : 'Créer mon espace')}`;\n  }\n  updateSyncIndicator();\n  try { renderBanner(); } catch (e) { console.warn('renderBanner', e); }\n  try { renderDemoBar(); } catch (e) { console.warn('renderDemoBar', e); }\n  try { renderInventory(); } catch (e) { console.warn('renderInventory', e); }\n  try { renderPannes(); } catch (e) { console.warn('renderPannes', e); }\n  try { renderFleet(); } catch (e) { console.warn('renderFleet', e); }\n  try { renderTripsJournal(); } catch (e) { console.warn('renderTripsJournal', e); }\n  try { renderDrivers(); } catch (e) { console.warn('renderDrivers', e); }\n  try { renderChantiers(); } catch (e) { console.warn('renderChantiers', e); }\n  try { renderCeo(); } catch (e) { console.warn('renderCeo', e); }\n  try { renderContact(); } catch (e) { console.warn('renderContact', e); }\n  try { renderReviews(); } catch (e) { console.warn('renderReviews', e); }\n}\n\n/* ---------- FORMULAIRES ---------- */\nconst FORMS = {\n  review(d) {\n    const author = (d.author || '').trim(), company = (d.company || '').trim(), text = (d.text || '').trim();\n    if (!author || !company || !text) { toast('Nom, entreprise et avis obligatoires.'); return; }\n    (S.reviews = S.reviews || []).unshift({\n      id: 'rev-' + uid(),\n      author,\n      company,\n      role: (d.role || 'Utilisateur').trim(),\n      city: d.city || 'Sénégal',\n      rating: +d.rating || 5,\n      tag: d.tag || 'BTP & Transport',\n      text,\n      date: day()\n    });\n    save(); closeModal(); renderAll(); toast('Merci pour votre avis ! Votre témoignage a été publié.');\n  },\n  member(d) {\n    const nom = (d.nom || '').trim(), email = (d.email || '').trim().toLowerCase(), tel = (d.tel || '').trim(), parts = String(d.scope).split(':'), type = parts[0], sid = parts[1];\n    if (!nom || !/^\S+@\S+\.\S+$/.test(email) || tel.replace(/\D/g, '').length < 9) { $('memErr').textContent = 'Nom, e-mail et téléphone valides sont obligatoires.'; return; }\n    if ((d.pw || '').length < 4) { $('memErr').textContent = 'Mot de passe : 4 caractères minimum.'; return; }\n    if (S.team.some(m => m.email === email)) { $('memErr').textContent = 'Cet e-mail est déjà utilisé par un membre.'; return; }\n    const mid = 'm' + uid();\n    S.team.push({ id: mid, nom, email, tel, role: type === 'chantier' ? 'chantier' : type === 'depot' ? 'magasinier' : 'transport', scope: { type, id: sid }, pw: hashPw(d.pw, mid) });\n    save(); renderAll(); openTeamModal(); toast('Membre ajouté');\n  },\n  depot(d) { const x = { id: 'd' + uid(), nom: d.nom.trim() }; S.depots.push(x); selDepot = x.id; save(); closeModal(); renderAll(); toast('Quincaillerie créée'); },\n  sale(d) {\n    const ids = [].concat(d['item[]'] || []), qs = [].concat(d['qty[]'] || []), ps = [].concat(d['pu[]'] || []), lines = [], need = {};\n    for (let k = 0; k < ids.length; k++) {\n      const it = S.inventory.find(x => x.id == ids[k]), q = +qs[k], pu = +ps[k];\n      if (!it || !(q > 0)) continue;\n      const isTonne = isCementOrTonne(it);\n      // Pour le ciment géré en tonnes et vendu en sacs : 20 sacs = 1 tonne\n      const neededInStockUnit = isTonne ? (q / 20) : q;\n      need[it.id] = (need[it.id] || 0) + neededInStockUnit;\n      lines.push({ item: it.id, name: it.name, unit: isTonne ? 'sacs (50kg)' : it.unit, qty: q, pu });\n    }\n    if (!lines.length) { $('saleErr').textContent = 'Ajoutez au moins un article.'; return; }\n    if (d.kind === 'entreprise' && !(d.cnom || '').trim()) { $('saleErr').textContent = 'Le nom de l’entreprise cliente est obligatoire.'; return; }\n    for (const id in need) {\n      const it = S.inventory.find(x => x.id == id);\n      if (need[id] > it.qty) {\n        $('saleErr').textContent = 'Stock insuffisant pour ' + it.name + ' : il reste ' + formatMaterialQty(it) + '.';\n        return;\n      }\n    }\n    lines.forEach(l => {\n      const it = S.inventory.find(x => x.id == l.item);\n      const isTonne = isCementOrTonne(it);\n      const deducted = isTonne ? (l.qty / 20) : l.qty;\n      it.qty = Math.max(0, it.qty - deducted);\n    });\n    const total = lines.reduce((s, l) => s + l.qty * l.pu, 0);\n    const sale = { id: 'v' + uid(), num: 'FAC-' + day().slice(0, 4) + '-' + String(++S.seq).padStart(4, '0'), depot: selDepot, date: day(), stype: d.stype, kind: d.kind, client: { nom: (d.cnom || '').trim() || 'Client comptoir', tel: d.ctel || '' }, pay: d.pay, lines, total };\n    S.sales.unshift(sale); save();\n    // Enregistrement cloud ou file d'attente hors-ligne\n    const sb = getSupabase();\n    if (sb && navigator.onLine) {\n      sb.from('ventes').insert({\n        company_id: S.co?.id,\n        numero_facture: sale.num,\n        client_nom: sale.client?.nom || 'Client comptoir',\n        client_tel: sale.client?.tel || '',\n        type_vente: sale.stype || 'detail',\n        mode_paiement: sale.pay || 'Espèces',\n        montant_total: sale.total || 0,\n        date_vente: sale.date || day()\n      }).then(() => { updateSyncIndicator(); }).catch(() => {\n        enqueueOfflineAction('sale', sale);\n      });\n    } else {\n      enqueueOfflineAction('sale', sale);\n    }\n    renderAll(); openInvoice(sale.id);\n  },\n  async co(d) {\n    const nom = (d.nom || '').trim();\n    const resp = (d.resp || '').trim();\n    const email = (d.email || '').trim().toLowerCase();\n    const tel = (d.tel || '').trim();\n    const ville = (d.ville || '').trim();\n    const password = d.pw ? d.pw.trim() : '';\n\n    if (!nom || !resp || !/^\S+@\S+\.\S+$/.test(email) || tel.replace(/\D/g, '').length < 9) {\n      return toast('Le nom, l’e-mail et le téléphone du patron sont obligatoires (min 9 chiffres).');\n    }\n\n    // Si Supabase est connecté, inscription sécurisée via Supabase Auth avec envoi d'email réel\n    const sb = getSupabase();\n    if (sb && password && password.length >= 6) {\n      try {\n        const { data: authData, error: authErr } = await sb.auth.signUp({\n          email,\n          password,\n          options: {\n            data: {\n              responsable_nom: resp,\n              company_name: nom,\n              telephone: tel,\n              ville\n            }\n          }\n        });\n        if (authErr) {\n          toast('Supabase Auth : ' + authErr.message);\n        } else {\n          toast('Email de confirmation envoyé à ' + email + ' !');\n          closeModal();\n          return;\n        }\n      } catch (err) {\n        console.warn('[Supabase Auth SignUp]', err);\n      }\n    }\n\n    // Si l'entreprise existe déjà et que l'e-mail n'a pas changé, mise à jour directe sans re-vérification\n    if (S.co && S.co.email && S.co.email.toLowerCase() === email) {\n      S.co.nom = nom;\n      S.co.resp = resp;\n      S.co.tel = tel;\n      S.co.ville = ville;\n      save();\n      closeModal();\n      renderAll();\n      return toast('Informations de l’entreprise mises à jour.');\n    }\n\n    // Sinon (création d'espace OU changement d'adresse e-mail), on déclenche le flux de vérification par code\n    const id = (S.co && S.co.id) || uid();\n    pendingCompanyData = {\n      id,\n      nom,\n      resp,\n      email,\n      tel,\n      ville,\n      since: (S.co && S.co.since) || day()\n    };\n    sendVerificationEmail(email);\n    openVerificationModal();\n    toast('Code de vérification généré : ' + verificationCode);\n  },\n  verifyEmail(d) {\n    const code = (d.code || ($('emailCodeInput') ? $('emailCodeInput').value : '')).trim();\n    const errBox = $('verifyCodeErr');\n\n    if (!verificationCode || !pendingCompanyData) {\n      if (errBox) errBox.textContent = 'Session expirée. Veuillez recommencer la saisie.';\n      return toast('Session de vérification expirée.');\n    }\n\n    if (verificationExpiry && Date.now() > verificationExpiry) {\n      if (errBox) errBox.textContent = 'Ce code a expiré. Cliquez sur « Renvoyer un code ».';\n      return toast('Code de vérification expiré.');\n    }\n\n    if (code !== verificationCode) {\n      if (errBox) errBox.textContent = 'Code incorrect. Veuillez saisir les 6 chiffres affichés.';\n      return toast('Code de vérification incorrect');\n    }\n\n    // Code valide et vérifié avec succès !\n    const first = !S.co;\n    S.co = {\n      ...pendingCompanyData,\n      emailVerified: true,\n      verifiedAt: day()\n    };\n\n    if (!S.trial && !S.sub) {\n      S.trial = { start: day(), end: addDays(day(), TRIAL_DAYS) };\n    }\n\n    verificationCode = null;\n    pendingCompanyData = null;\n    verificationExpiry = null;\n    if (typeof window !== 'undefined') window.verificationCode = null;\n\n    save();\n    closeModal();\n    renderAll();\n    toast(first ? '🎉 Bienvenue ! E-mail vérifié et essai gratuit de ' + TRIAL_DAYS + ' jours activé.' : '✅ E-mail vérifié et entreprise mise à jour avec succès.');\n  },\n  rolepw(d) {\n    let ok = false, user = null;\n    if (d.member) { user = S.team.find(m => m.id === d.member); ok = !!user && hashPw(d.pw, user.id) === user.pw; }\n    else ok = hashPw(d.pw, S.co.id) === S.roles[d.role];\n    if (!ok) { $('pwErr').textContent = 'Mot de passe incorrect.'; return; }\n    curUser = user; try { sessionStorage.setItem('safebtp.user', user ? user.id : ''); } catch (e) {}\n    closeModal(); enterRole(d.role); const cb = pendingRole && pendingRole.cb; pendingRole = null; if (cb) cb();\n  },\n  stock(d) {\n    let q = +d.qty;\n    const inputUnit = (d.input_unit || d.unit || 'unités').toLowerCase();\n    const nm = d.name.trim().toLowerCase();\n    let ex = S.inventory.find(i => i.depot === selDepot && i.name.toLowerCase() === nm);\n\n    if (ex) {\n      const exUnit = (ex.unit || '').toLowerCase();\n      const exIsTonne = exUnit.includes('tonne') || isCementOrTonne(ex);\n      let addQty = q;\n      // Conversion 1 tonne = 20 sacs\n      if (exIsTonne && inputUnit.includes('sac')) {\n        addQty = q / 20; // 20 sacs = 1 tonne\n      } else if (exUnit.includes('sac') && inputUnit.includes('tonne')) {\n        addQty = q * 20; // 1 tonne = 20 sacs\n      }\n      ex.qty += addQty;\n      if (+d.price) ex.price = +d.price;\n      if (+d.priceGros) ex.priceGros = +d.priceGros;\n    } else {\n      let finalUnit = d.unit || 'unités';\n      let finalQty = q;\n      if (finalUnit === 'tonne' && inputUnit.includes('sac')) {\n        finalQty = q / 20;\n      } else if (finalUnit === 'sacs' && inputUnit.includes('tonne')) {\n        finalQty = q * 20;\n      }\n      S.inventory.push({\n        id: Date.now(),\n        depot: selDepot,\n        name: d.name.trim(),\n        cat: d.cat || 'Divers',\n        qty: finalQty,\n        unit: finalUnit,\n        uom_ratio: (finalUnit === 'tonne' || isCementOrTonne({ name: d.name, unit: finalUnit })) ? 20 : 1,\n        sale_unit: finalUnit === 'tonne' ? 'sac 50kg' : finalUnit,\n        price: +d.price || 0,\n        priceGros: +d.priceGros || +d.price || 0,\n        lastChantier: ''\n      });\n    }\n    save();\n    // Enregistrement cloud ou file d'attente hors-ligne\n    const sb = getSupabase();\n    if (sb && navigator.onLine) {\n      sb.from('articles').upsert({\n        company_id: S.co?.id,\n        nom: d.name,\n        categorie: d.cat || 'Divers',\n        unite: d.unit || 'unités',\n        stock_actuel: (ex ? ex.qty : finalQty),\n        prix_detail: +d.price || 0,\n        prix_gros: +d.priceGros || +d.price || 0\n      }).then(() => { updateSyncIndicator(); }).catch(() => {\n        enqueueOfflineAction('stock', { name: d.name, cat: d.cat, unit: d.unit, qty: (ex ? ex.qty : finalQty), price: +d.price, priceGros: +d.priceGros });\n      });\n    } else {\n      enqueueOfflineAction('stock', { name: d.name, cat: d.cat, unit: d.unit, qty: (ex ? ex.qty : finalQty), price: +d.price, priceGros: +d.priceGros });\n    }\n    closeModal(); renderAll(); toast('Stock mis à jour avec conversion exacte');\n  },\n  dispatch(d) {\n    const i = S.inventory.find(x => x.id == d.id), q = +d.qty, c = S.chantiers.find(x => x.id === d.chantier);\n    if (!i || !c) return;\n    const isTonne = isCementOrTonne(i);\n    const dispUnit = (d.dispatch_unit || i.unit || '').toLowerCase();\n    \n    let deductedInStockUnit = q;\n    let label = '';\n    let expAmount = 0;\n\n    if (isTonne && dispUnit.includes('sac')) {\n      deductedInStockUnit = q / 20; // 20 sacs = 1 tonne\n      label = fm(q) + ' sac' + (q > 1 ? 's' : '') + ' de 50 kg (' + (deductedInStockUnit >= 1 ? fm(deductedInStockUnit) + ' t' : q + ' sacs') + ')';\n      expAmount = q * (i.price || 0);\n    } else if (isTonne && dispUnit.includes('tonne')) {\n      deductedInStockUnit = q;\n      label = fm(q) + ' tonne' + (q > 1 ? 's' : '') + ' (' + fm(q * 20) + ' sacs)';\n      expAmount = (q * 20) * (i.price || 0);\n    } else {\n      deductedInStockUnit = q;\n      label = fm(q) + ' ' + esc(i.unit);\n      expAmount = q * (i.price || 0);\n    }\n\n    if (deductedInStockUnit > i.qty) {\n      $('dispErr').textContent = 'Stock insuffisant : il reste ' + formatMaterialQty(i) + '.';\n      return;\n    }\n    i.qty -= deductedInStockUnit;\n    i.lastChantier = c.nom.replace('Chantier ', '');\n    S.expenses.push({ id: Date.now(), chantier: c.id, date: day(), title: label + ' ' + i.name, source: 'Quincaillerie principale', cat: 'Matériaux', amount: expAmount });\n    save(); renderAll();\n    openModal(`<div id="bon" class="font-mono text-xs space-y-1"><div class="text-center font-bold border-b border-slate-300 pb-2 text-slate-900">${esc(S.co ? S.co.nom : 'MARGEUP')} · BON DE SORTIE</div><div class="flex justify-between"><span>Date</span><span>${fr(day())}</span></div><div class="flex justify-between"><span>Chantier</span><span>${esc(c.nom)}</span></div><div class="flex justify-between"><span>Article</span><span>${esc(i.name)}</span></div><div class="flex justify-between font-bold"><span>Quantité</span><span>${esc(label)}</span></div><div class="flex justify-between font-bold"><span>Valeur</span><span>${fm(expAmount)} FCFA</span></div></div><p class="text-[11px] text-emerald-600">La dépense a été ajoutée au chantier.</p><div class="flex justify-end gap-2"><button onclick="closeModal()" class="px-4 py-2 rounded-xl text-xs bg-slate-100 text-slate-600">Fermer</button><button onclick="window.print()" class="px-4 py-2 rounded-xl text-xs bg-purple-600 text-white font-bold">Imprimer</button></div>`);\n  },\n  trip(d) {\n    const f = S.fleet.find(x => x.id == d.id);\n    if (!f) return;\n    (f.trips = f.trips || []).unshift({\n      d: d.d || day(),\n      voyages: +d.voyages || 1,\n      km: +d.km || 0,\n      depart: (d.depart || '').trim(),\n      arrivee: (d.arrivee || '').trim(),\n      obs: (d.obs || '').trim()\n    });\n    save(); closeModal(); renderAll(); toast('Voyage, rotation et lieux enregistrés');\n  },\n  truck(d) { S.fleet.push({ id: Date.now(), name: d.name, plate: d.plate, driver: d.driver, type: d.type || 'benne', status: 'Disponible', carb: [] }); save(); closeModal(); renderAll(); toast('Camion ajouté'); },\n  fuel(d) {\n    const f = S.fleet.find(x => x.id == d.id), l = +d.l, amount = +d.amount || 0;\n    (f.carb = f.carb || []).unshift({ d: day(), l, amount, km: d.km ? +d.km : null, station: d.station || '' });\n    if (d.chantier && amount) S.expenses.unshift({ id: Date.now(), chantier: d.chantier, date: day(), title: 'Carburant ' + f.name + ' (' + f.plate + ') : ' + fm(l) + ' L', source: d.station || 'Station', cat: 'Carburant', amount });\n    save(); closeModal(); renderAll(); toast(d.chantier && amount ? 'Plein enregistré et ajouté aux dépenses du chantier' : 'Plein enregistré');\n  },\n  panne(d) {\n    const f = S.fleet.find(x => x.id == d.fid);\n    S.pannes.unshift({ id: Date.now(), date: day(), vehicle: f.name + ' (' + f.plate + ')', driver: f.driver, diag: d.diag, severity: d.sev, status: d.st, cost: +d.cost || 0 });\n    if (d.st !== 'Terminé') f.status = 'En Panne';\n    save(); closeModal(); renderAll(); toast('Panne enregistrée');\n  },\n  chantier(d) { const c = { id: 'c' + uid(), nom: d.nom.trim(), budget: +d.budget }; S.chantiers.push(c); selChantier = c.id; save(); closeModal(); renderAll(); toast('Chantier créé'); },\n  expense(d) { S.expenses.unshift({ id: Date.now(), chantier: d.chantier, date: day(), title: d.title, source: d.source || 'Non précisé', cat: d.cat, amount: +d.amount }); selChantier = d.chantier; save(); closeModal(); renderAll(); toast('Dépense enregistrée'); },\n  bat(d) {\n    let b = S.batiments.find(x => x.id === d.id);\n    if (!b) { const ph = {}; PHASES.forEach(p => ph[p[0]] = 0); b = { id: 'b' + uid(), chantier: d.chantier, ph }; S.batiments.push(b); }\n    Object.assign(b, { nom: d.nom.trim(), niveaux: +d.niveaux || 0, niveauActuel: d.niveauActuel === '' ? 0 : +d.niveauActuel, ingenieur: d.ingenieur, resp: d.resp, debut: d.debut, prevision: d.prevision, livraison: d.livraison, note: d.note });\n    save(); closeModal(); renderAll(); toast('Bâtiment enregistré');\n  },\n  batup(d) { const b = S.batiments.find(x => x.id === d.id); PHASES.forEach(p => b.ph[p[0]] = +d[p[0]]); if (d.niveauActuel !== undefined && d.niveauActuel !== '') b.niveauActuel = +d.niveauActuel; save(); closeModal(); renderAll(); toast('Avancement mis à jour : ' + batPct(b) + '%'); },\n  pay(d) {\n    const until = addDays(day(), calc.isAnnual ? 365 : 30);\n    S.sub = { trucks: calc.camions, chantiers: calc.chantiers, quinc: calc.quinc, annual: calc.isAnnual, amount: Math.round(calc.total), method: payMe === 'w' ? 'Wave' : 'Orange Money', phone: d.phone, ref: d.ref, date: day(), until, status: 'verif' };\n    save(); closeModal(); renderAll(); switchTab('accueil'); toast('Abonnement activé. Paiement en cours de vérification.');\n  },\n  contact(d) {\n    const nom = (d.nom || '').trim(), tel = (d.tel || '').trim(), msg = (d.message || '').trim(), obj = d.objet || 'Demande de renseignement';\n    if (!nom || tel.length < 9 || !msg) return toast('Veuillez renseigner votre nom, téléphone et message.');\n    closeModal();\n    toast('Merci ' + nom + ' ! Votre message a bien été envoyé. Notre équipe vous recontacte rapidement.');\n    const waText = encodeURIComponent(`Bonjour MargeUp,\nJe suis ${nom} (Tél: ${tel}).\nObjet: ${obj}\nMessage: ${msg}`);\n    const num = CONTACT.tel.replace(/\D/g, '');\n    setTimeout(() => {\n      if (confirm('Souhaitez-vous également ouvrir WhatsApp pour échanger directement avec notre conseiller ?')) {\n        window.open('https://wa.me/221' + num + '?text=' + waText, '_blank');\n      }\n    }, 400);\n  }\n};\n\n/* ---------- VENTES (DÉTAIL ET GROS) ET FACTURES ---------- */\nconst PAYS = ['Espèces', 'Wave', 'Orange Money', 'Crédit'];\nfunction openSaleModal() {\n  if (!S.inventory.some(i => i.depot === selDepot)) return toast('Ajoutez d’abord des articles à cette quincaillerie');\n  const dp = S.depots.find(d => d.id === selDepot) || {};\n  openModal(`<h3 class="text-base font-bold text-slate-900">Nouvelle vente · ${esc(dp.nom || '')}</h3><form data-f="sale" class="space-y-3">\n    <div class="grid grid-cols-2 gap-3">${sel('Type de vente', 'stype', [['detail', 'Détail'], ['gros', 'Gros']]).replace('<select', '<select onchange="saleType()"')}${sel('Type de client', 'kind', [['particulier', 'Particulier (population)'], ['entreprise', 'Entreprise']])}${fld('Nom du client', 'cnom', 'text', 'placeholder="Client comptoir"')}${fld('Téléphone (facultatif)', 'ctel', 'tel')}</div>\n    ${sel('Paiement', 'pay', PAYS.map(p => [p, p]))}\n    <div id="saleRows" class="space-y-2"></div>\n    <button type="button" onclick="addSaleRow()" class="text-xs text-orange-700 font-bold">+ Ajouter un article</button>\n    <div class="flex justify-between text-sm font-bold text-slate-900 border-t border-slate-200 pt-2"><span>Total</span><span id="saleTotal">0 FCFA</span></div>\n    <div id="saleErr" class="text-xs text-rose-600"></div>\n    <div class="flex justify-end gap-2 pt-2"><button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl text-xs bg-slate-100 text-slate-600">Annuler</button><button class="px-4 py-2 rounded-xl text-xs bg-yellow-400 text-slate-950 font-bold">Valider et éditer la facture</button></div></form>`);\n  addSaleRow();\n}\nfunction addSaleRow() {\n  const I = S.inventory.filter(i => i.depot === selDepot);\n  $('saleRows').insertAdjacentHTML('beforeend', `<div class="sale-row grid grid-cols-12 gap-2 items-end"><label class="col-span-12 sm:col-span-6 text-[11px] text-slate-600">Article<select name="item[]" onchange="saleFill(this)" class="${INPUT} mt-1">${I.map(i => `<option value="${i.id}">${esc(i.name)} (${formatMaterialQty(i)})</option>`).join('')}</select></label><label class="col-span-5 sm:col-span-2 text-[11px] text-slate-600">Quantité (sacs/unités)<input name="qty[]" type="number" min="0.01" step="any" required value="1" oninput="saleCalc()" class="${INPUT} mt-1"></label><label class="col-span-7 sm:col-span-4 text-[11px] text-slate-600">Prix unitaire (FCFA)<input name="pu[]" type="number" min="0" required oninput="saleCalc()" class="${INPUT} mt-1"></label></div>`);\n  saleFill($('saleRows').lastElementChild.querySelector('select'));\n}\nfunction saleFill(se) {\n  const i = S.inventory.find(x => x.id == se.value), t = document.querySelector('#modalBox [name=stype]').value, row = se.closest('.sale-row');\n  row.querySelector('[name="pu[]"]').value = i ? (t === 'gros' ? (i.priceGros || i.price) : i.price) : 0; saleCalc();\n}\nfunction saleType() { document.querySelectorAll('#saleRows select').forEach(saleFill); }\nfunction saleCalc() { let t = 0; document.querySelectorAll('#saleRows .sale-row').forEach(r => { t += (+r.querySelector('[name="qty[]"]').value || 0) * (+r.querySelector('[name="pu[]"]').value || 0); }); $('saleTotal').textContent = fm(t) + ' FCFA'; }\nfunction renderSales() {\n  const L = S.sales.filter(s => s.depot === selDepot), td = day(), T = L.filter(s => s.date === td), sum = f => T.filter(f).reduce((x, s) => x + s.total, 0);\n  $('sales-kpis').innerHTML = [['Ventes du jour', sum(() => true), 'text-slate-900'], ['Dont détail', sum(s => s.stype === 'detail'), 'text-emerald-700'], ['Dont gros', sum(s => s.stype === 'gros'), 'text-amber-700']].map(k => `<div class="bg-slate-50 border border-slate-200 rounded-xl p-4"><div class="text-[11px] text-slate-600">${k[0]}</div><div class="text-xl font-black ${k[2]}">${fm(k[1])} <span class="text-xs font-normal text-slate-500">FCFA</span></div></div>`).join('');\n  $('sales-table-body').innerHTML = L.length ? L.slice(0, 30).map(s => `<tr class="hover:bg-slate-50"><td class="p-3 text-slate-600">${fr(s.date)}</td><td class="p-3 font-bold text-slate-900">${esc(s.num)}</td><td class="p-3 text-slate-700">${esc(s.client.nom)}<div class="text-[10px] text-slate-500">${s.kind === 'entreprise' ? 'Entreprise' : 'Particulier'}</div></td><td class="p-3"><span class="text-[10px] px-2 py-0.5 rounded border ${s.stype === 'gros' ? 'bg-amber-500/15 text-amber-700 border-amber-500/30' : 'bg-emerald-500/15 text-emerald-700 border-emerald-500/30'}">${s.stype === 'gros' ? 'Gros' : 'Détail'}</span></td><td class="p-3 font-bold text-orange-700">${fm(s.total)} FCFA</td><td class="p-3 text-slate-600">${esc(s.pay)}</td><td class="p-3"><button onclick="openInvoice('${s.id}')" class="bg-purple-600 hover:bg-purple-500 text-white text-[11px] px-2.5 py-1 rounded-lg">Facture</button></td></tr>`).join('') : '<tr><td colspan="7" class="p-6 text-center text-slate-500">Aucune vente ni facture enregistrée. Cliquez sur « Nouvelle vente » pour créer votre première facture.</td></tr>';\n}\nfunction invoiceHtml(s) {\n  const co = S.co || { nom: 'MargeUp' }, dp = S.depots.find(d => d.id === s.depot) || {}, th = al => '<th style="text-align:' + al + ';padding:6px;background:#f3f4f6;border-bottom:1px solid #ddd">', td = al => '<td style="text-align:' + al + ';padding:6px;border-bottom:1px solid #eee">';\n  return `<div style="font-family:Arial,sans-serif;color:#111;font-size:13px"><div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap"><div><div style="font-size:18px;font-weight:bold">${esc(co.nom)}</div><div>${esc(dp.nom || '')}</div><div>${esc(co.ville || '')}${co.tel ? ' · ' + esc(co.tel) : ''}</div><div>${esc(co.email || '')}</div></div><div style="text-align:right"><div style="font-size:18px;font-weight:bold">FACTURE</div><div>N° ${esc(s.num)}</div><div>Date : ${fr(s.date)}</div><div>Vente ${s.stype === 'gros' ? 'en gros' : 'au détail'}</div></div></div>\n  <div style="margin:14px 0;padding:8px;background:#f9fafb;border-radius:6px"><b>Client :</b> ${esc(s.client.nom)} (${s.kind === 'entreprise' ? 'entreprise' : 'particulier'})${s.client.tel ? ' · ' + esc(s.client.tel) : ''}</div>\n  <table style="width:100%;border-collapse:collapse"><tr>${th('left')}Désignation</th>${th('right')}Qté</th>${th('right')}Prix unitaire</th>${th('right')}Montant</th></tr>${s.lines.map(l => `<tr>${td('left')}${esc(l.name)}</td>${td('right')}${fm(l.qty)} ${esc(l.unit)}</td>${td('right')}${fm(l.pu)}</td>${td('right')}${fm(l.qty * l.pu)}</td></tr>`).join('')}</table>\n  <div style="text-align:right;font-size:16px;font-weight:bold;margin-top:12px">TOTAL : ${fm(s.total)} FCFA</div><div style="margin-top:6px">Paiement : ${esc(s.pay)}</div><div style="margin-top:16px;color:#555;font-size:11px">Montants en FCFA. Merci de votre confiance.</div></div>`;\n}\nfunction openInvoice(id) {\n  const s = S.sales.find(x => x.id === id); if (!s) return;\n  openModal(`<div id="invoice" style="background:#fff;border-radius:12px;padding:18px;color:#111">${invoiceHtml(s)}</div><div class="flex flex-wrap justify-end gap-2 pt-2"><button onclick="closeModal()" class="px-4 py-2 rounded-xl text-xs bg-slate-100 text-slate-700">Fermer</button><button onclick="shareInvoice('${s.id}')" class="px-4 py-2 rounded-xl text-xs bg-emerald-600 text-white font-bold">Envoyer</button><button onclick="downloadInvoice('${s.id}')" class="px-4 py-2 rounded-xl text-xs bg-amber-500 text-slate-950 font-bold">Télécharger le PDF</button><button onclick="window.print()" class="px-4 py-2 rounded-xl text-xs bg-purple-600 text-white font-bold">Imprimer</button></div>`);\n}\nfunction pdfBlob(pages) {\n  const enc = t => String(t).replace(/[’‘]/g, "'").replace(/[“”]/g, '"').replace(/œ/g, 'oe').replace(/…/g, '...').replace(/[\u202f\u00a0]/g, ' ').replace(/[^\x20-\xFF]/g, '?').replace(/[\\()]/g, '\\$&');\n  const objs = [], add = o => objs.push(o);\n  add('<< /Type /Catalog /Pages 2 0 R >>'); add('PAGES');\n  add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>'); add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');\n  const kids = [];\n  pages.forEach(P => {\n    const c = P.map(o => 'BT /' + (o.b ? 'F2' : 'F1') + ' ' + (o.s || 10) + ' Tf ' + o.x + ' ' + o.y + ' Td (' + enc(o.t) + ') Tj ET').join('\n');\n    add('<< /Length ' + c.length + ' >>\nstream\n' + c + '\nendstream'); const cn = objs.length;\n    add('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ' + cn + ' 0 R >>'); kids.push(objs.length + ' 0 R');\n  });\n  objs[1] = '<< /Type /Pages /Kids [' + kids.join(' ') + '] /Count ' + kids.length + ' >>';\n  let out = '%PDF-1.4\n'; const off = [];\n  objs.forEach((o, i) => { off.push(out.length); out += (i + 1) + ' 0 obj\n' + o + '\nendobj\n'; });\n  const x = out.length;\n  out += 'xref\n0 ' + (objs.length + 1) + '\n0000000000 65535 f \n' + off.map(o => String(o).padStart(10, '0') + ' 00000 n \n').join('') + 'trailer\n<< /Size ' + (objs.length + 1) + ' /Root 1 0 R >>\nstartxref\n' + x + '\n%%EOF';\n  const u = new Uint8Array(out.length); for (let i = 0; i < out.length; i++) u[i] = out.charCodeAt(i) & 255;\n  return new Blob([u], { type: 'application/pdf' });\n}\nfunction invoicePdf(s) {\n  const co = S.co || { nom: 'MargeUp' }, dp = S.depots.find(d => d.id === s.depot) || {}, pages = [[]]; let P = pages[0], y = 800;\n  const t = (x, yy, text, b, sz) => P.push({ x, y: yy, t: text, b, s: sz || 10 });\n  t(40, y, co.nom, 1, 18); t(400, y, 'FACTURE', 1, 18); y -= 18;\n  t(40, y, dp.nom || '', 0); t(400, y, 'N° ' + s.num, 1, 11); y -= 13;\n  t(40, y, [co.ville, co.tel].filter(Boolean).join(' - '), 0); t(400, y, 'Date : ' + fr(s.date), 0); y -= 13;\n  t(40, y, co.email || '', 0); t(400, y, 'Vente ' + (s.stype === 'gros' ? 'en gros' : 'au détail'), 0); y -= 28;\n  t(40, y, 'Client : ' + s.client.nom + ' (' + (s.kind === 'entreprise' ? 'entreprise' : 'particulier') + ')' + (s.client.tel ? ' - ' + s.client.tel : ''), 1, 11); y -= 28;\n  t(40, y, 'Désignation', 1); t(310, y, 'Quantité', 1); t(400, y, 'Prix unitaire', 1); t(490, y, 'Montant', 1); y -= 18;\n  s.lines.forEach(l => { if (y < 90) { P = []; pages.push(P); y = 800; } t(40, y, String(l.name).slice(0, 44), 0); t(310, y, fm(l.qty) + ' ' + l.unit, 0); t(400, y, fm(l.pu), 0); t(490, y, fm(l.qty * l.pu), 0); y -= 15; });\n  y -= 12; if (y < 90) { P = []; pages.push(P); y = 800; }\n  t(380, y, 'TOTAL : ' + fm(s.total) + ' FCFA', 1, 13); y -= 24; t(40, y, 'Paiement : ' + s.pay, 0); y -= 40; t(40, y, 'Montants en FCFA. Merci de votre confiance.', 0, 9);\n  return pdfBlob(pages);\n}\nfunction downloadInvoice(id) {\n  const s = S.sales.find(x => x.id === id); if (!s) return;\n  const a = document.createElement('a'); a.href = URL.createObjectURL(invoicePdf(s)); a.download = 'facture-' + s.num + '.pdf'; a.click();\n}\nfunction shareInvoice(id) {\n  const s = S.sales.find(x => x.id === id); if (!s) return;\n  const msg = (S.co ? S.co.nom : 'MargeUp') + ' : facture ' + s.num + ' du ' + fr(s.date) + ', total ' + fm(s.total) + ' FCFA. Merci de votre confiance.';\n  try {\n    const f = new File([invoicePdf(s)], 'facture-' + s.num + '.pdf', { type: 'application/pdf' });\n    if (navigator.canShare && navigator.canShare({ files: [f] })) return navigator.share({ files: [f], title: 'Facture ' + s.num, text: msg }).catch(() => {});\n  } catch (e) {}\n  let ph = String(s.client.tel || '').replace(/\D/g, ''); if (ph.length === 9) ph = '221' + ph;\n  window.open('https://wa.me/' + ph + '?text=' + encodeURIComponent(msg), '_blank'); toast('Téléchargez le PDF puis joignez-le au message WhatsApp.');\n}\n\n/* ---------- ÉQUIPE : ADMINS PAR CHANTIER, QUINCAILLERIE ET CAMION ---------- */\nfunction openTeamModal() {\n  if (!S.co) return openCompanyModal();\n  if (curRole !== 'ceo') return toast('Réservé au patron : repassez au rôle CEO.');\n  openModal(`<h3 class="text-base font-bold text-slate-900">Mon équipe</h3><p class="text-xs text-slate-600">Un admin par chantier, par quincaillerie et par camion (ou pour toute la flotte). Nom, e-mail et téléphone sont obligatoires.</p>\n  <div class="space-y-2">${S.team.length ? S.team.map(m => `<div class="bg-slate-100 rounded-xl p-3 flex justify-between gap-2 items-start"><div class="text-xs"><div class="font-bold text-slate-900">${esc(m.nom)}</div><div class="text-slate-700">${esc(scopeLabel(m))}</div><div class="text-slate-500">${esc(m.email)} · ${esc(m.tel)}</div></div><button onclick="delMember('${m.id}')" class="text-[11px] text-slate-700 bg-slate-200 px-2 py-1 rounded-lg">Retirer</button></div>`).join('') : '<div class="text-xs text-slate-500 text-center p-4">Aucun membre pour l’instant.</div>'}</div>\n  <div class="flex justify-end gap-2"><button onclick="closeModal()" class="px-4 py-2 rounded-xl text-xs bg-slate-100 text-slate-600">Fermer</button><button onclick="openMemberModal()" class="px-4 py-2 rounded-xl text-xs bg-yellow-400 text-slate-950 font-bold">Ajouter un membre</button></div>`);\n}\nfunction openMemberModal() {\n  const opts = S.chantiers.map(c => ['chantier:' + c.id, 'Admin du chantier : ' + c.nom.replace('Chantier ', '')]).concat(S.depots.map(d => ['depot:' + d.id, 'Admin de la quincaillerie : ' + d.nom]), [['truck:all', 'Admin de toute la flotte']], S.fleet.map(f => ['truck:' + f.id, 'Admin du camion : ' + f.name + ' (' + f.plate + ')']));\n  openModal(formWrap('Ajouter un membre', 'member', fld('Nom et prénom *', 'nom', 'text', 'required') + '<div class="grid grid-cols-2 gap-3">' + fld('E-mail *', 'email', 'email', 'required') + fld('Téléphone *', 'tel', 'tel', 'required minlength="9"') + '</div>' + sel('Rôle et responsabilité *', 'scope', opts) + fld('Mot de passe de connexion * (4 caractères minimum)', 'pw', 'password', 'required minlength="4" autocomplete="new-password"') + '<div id="memErr" class="text-xs text-rose-600"></div>', 'Ajouter'));\n}\nfunction delMember(id) { if (!confirm('Retirer ce membre ?')) return; S.team = S.team.filter(m => m.id !== id); save(); openTeamModal(); }\nfunction openContactModal(prefillSubject = '') {\n  openModal(formWrap('Nous contacter', 'contact',\n    `<p class="text-xs text-slate-500 mb-2">Notre équipe basée au Sénégal vous répond dans les plus brefs délais.</p>` +\n    fld('Nom et prénom *', 'nom', 'text', 'required placeholder="Ex. Ousmane Ndiaye"') +\n    '<div class="grid grid-cols-2 gap-3">' +\n      fld('Téléphone (WhatsApp) *', 'tel', 'tel', 'required minlength="9" placeholder="77 000 00 00"') +\n      fld('E-mail (facultatif)', 'email', 'email', 'placeholder="contact@entreprise.sn"') +\n    '</div>' +\n    sel('Votre secteur ou besoin', 'objet', [\n      ['Pack B2C Détail', 'Pack B2C Détail'],\n      ['Complet Hybride B2B + B2C', 'Complet Hybride B2B + B2C'],\n      ['Flotte Camions & Registre Pannes', 'Flotte Camions & Registre Pannes'],\n      ['Démonstration personnalisée', 'Démonstration personnalisée'],\n      ['Autre question', 'Autre question']\n    ]) +\n    `<label class="block text-xs font-semibold text-slate-500">Votre message *\n      <textarea name="message" required rows="3" class="${INPUT} mt-1" placeholder="Indiquez ici vos questions ou le nombre de quincailleries / camions à paramétrer..."></textarea>\n    </label>`,\n    'Envoyer ma demande'\n  ));\n  if (prefillSubject) {\n    const s = document.querySelector('#modalBox select[name="objet"]');\n    if (s) s.value = prefillSubject;\n  }\n}\n\nfunction renderContact() {\n  const el = $('contact-box'); if (!el) return;\n  const t = CONTACT.tel.replace(/\D/g, ''), disp = t.replace(/(\d{2})(\d{3})(\d{2})(\d{2})/, '$1 $2 $3 $4');\n  el.innerHTML = `<div class="flex flex-col lg:flex-row items-center justify-between gap-6">\n    <div class="space-y-3 text-center lg:text-left">\n      <div class="inline-flex items-center space-x-2 bg-orange-500/20 text-orange-400 border border-orange-500/30 px-3 py-0.5 rounded-full text-xs font-bold">\n        <i class="fa-solid fa-headset"></i>\n        <span>Équipe Dédiée au Sénégal</span>\n      </div>\n      <h2 class="text-xl sm:text-2xl font-black text-white">Une question ? Besoin d’une démonstration ?</h2>\n      <p class="text-xs text-slate-300 max-w-xl leading-relaxed">\n        Notre équipe basée à Dakar vous accompagne pour paramétrer vos quincailleries, chantiers et camions. Contactez-nous par e-mail ou WhatsApp :\n      </p>\n      <div class="flex flex-wrap items-center justify-center lg:justify-start gap-2 pt-1">\n        <a href="mailto:${CONTACT.email}" class="inline-flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-orange-400 hover:text-orange-300 px-3.5 py-2 rounded-xl text-xs font-bold border border-slate-600 transition shadow-sm cursor-pointer" title="Nous écrire par e-mail">\n          <i class="fa-solid fa-envelope text-sm"></i>\n          <span class="underline">${CONTACT.email}</span>\n        </a>\n        <a href="https://wa.me/221${t}?text=Bonjour%20MargeUp,%20je%20souhaite%20des%20informations%20sur%20l'application" target="_blank" rel="noopener" class="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-3.5 py-2 rounded-xl text-xs font-bold transition shadow-sm cursor-pointer" title="Rejoindre directement sur WhatsApp">\n          <i class="fa-brands fa-whatsapp text-sm text-emerald-200"></i>\n          <span>Rejoindre sur WhatsApp</span>\n        </a>\n      </div>\n    </div>\n\n    <div class="flex flex-wrap items-center justify-center gap-3">\n      <a href="https://wa.me/221${t}?text=Bonjour%20MargeUp,%20je%20souhaite%20des%20informations%20sur%20l'application" target="_blank" rel="noopener" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-3 rounded-xl text-xs flex items-center space-x-2 transition shadow-lg shadow-emerald-600/30 cursor-pointer">\n        <i class="fa-brands fa-whatsapp text-base"></i>\n        <span>WhatsApp Direct</span>\n      </a>\n      <button type="button" onclick="openContactModal()" class="bg-yellow-400 hover:bg-yellow-300 text-slate-950 font-bold shadow-md px-4 py-3 rounded-xl text-xs flex items-center space-x-2 shadow-lg shadow-orange-500/30 transition cursor-pointer">\n        <i class="fa-solid fa-paper-plane"></i>\n        <span>Formulaire</span>\n      </button>\n      <a href="tel:+221${t}" class="bg-slate-800 hover:bg-slate-700 text-white border border-slate-600 font-bold px-4 py-3 rounded-xl text-xs flex items-center space-x-2 transition">\n        <i class="fa-solid fa-phone"></i>\n        <span>${disp}</span>\n      </a>\n    </div>\n  </div>`;\n}\n\n\n/* ---------- DIRECTION EN CONSULTATION SEULE (les saisies de l'équipe font foi) ---------- */\nconst FIELD_FORMS = ['stock', 'dispatch', 'sale', 'fuel', 'trip', 'panne', 'expense', 'bat', 'batup'];\nconst ro = () => !!S.co && curRole === 'ceo';\nfunction roNotice() { toast('La direction consulte seulement : les saisies sont faites par l’équipe (magasinier, transport, chef de chantier) pour garantir la transparence. Ajoutez des membres avec « Équipe ».'); }\n['openStockModal', 'openDispatchModal', 'openSaleModal', 'openFuelModal', 'openTripModal', 'openPanneModal', 'openExpenseModal', 'delExpense', 'openBatModal', 'openBatUpdate', 'delBat', 'delTruck'].forEach(n => {\n  const f = window[n]; if (typeof f === 'function') window[n] = function () { if (ro()) return roNotice(); return f.apply(this, arguments); };\n});\n\n/* Maintenance / Admin : retiré du code client. */\n\n/* ---------- DÉMARRAGE ---------- */\ndocument.addEventListener('submit', e => { const f = e.target.dataset && e.target.dataset.f; if (f && FORMS[f]) { e.preventDefault(); if (ro() && FIELD_FORMS.includes(f)) return roNotice(); const d = {}; new FormData(e.target).forEach((v, k) => { if (k.slice(-2) === '[]') (d[k] = d[k] || []).push(v); else d[k] = v; }); FORMS[f](d); } });\nwindow.onload = async function () {\n  try { const r = sessionStorage.getItem('safebtp.role'), mu = S.team.find(m => m.id === sessionStorage.getItem('safebtp.user')); if (r && r !== 'ceo' && ((mu && mu.role === r) || !S.co)) { curRole = r; curUser = mu || null; } } catch (e) {}\n  $('roleSelector').value = curRole;\n  changeRole(curRole); updatePricingCalculator(); renderAll(); applyPlanRestrictions();\n  // Accès maintenance désactivé\n  // Restauration d'arrière-plan résiliente depuis IndexedDB\n  await syncFromIndexedDB();\n};\n\n/* ---------- MENTIONS LÉGALES, POLITIQUE DE CONFIDENTIALITÉ (CDP SÉNÉGAL) & CGU ---------- */\nfunction openLegalModal(type) {\n  let title = '', content = '';\n\n  if (type === 'mentions') {\n    title = 'Mentions Légales';\n    content = `\n      <div class="space-y-4 text-xs text-slate-700 leading-relaxed">\n        <div class="bg-orange-50 border border-orange-200 rounded-xl p-3 text-orange-950 font-medium">\n          <p class="font-bold text-slate-900">Éditeur de la plateforme MargeUp</p>\n          <p>MargeUp est une solution numérique de gestion pour le BTP, le génie civil, la quincaillerie et le transport au Sénégal.</p>\n        </div>\n        <div>\n          <h4 class="font-bold text-slate-900 text-sm mb-1">1. Coordonnées de l'éditeur</h4>\n          <p><b>Éditeur :</b> Équipe MargeUp Sénégal</p>\n          <p><b>Siège d’activité :</b> Dakar, Sénégal</p>\n          <p><b>Contact e-mail :</b> <a href="mailto:${CONTACT.email}" class="text-orange-600 underline font-semibold">${CONTACT.email}</a></p>\n          <p><b>Téléphone / WhatsApp officiel :</b> <a href="tel:+221${CONTACT.tel.replace(/\D/g, '')}" class="text-orange-600 font-semibold">${CONTACT.tel}</a></p>\n        </div>\n        <div>\n          <h4 class="font-bold text-slate-900 text-sm mb-1">2. Hébergement technique</h4>\n          <p>L’application web et ses bases de données sécurisées sont hébergées par des prestataires d’infrastructures cloud certifiés assurant le chiffrement HTTPS/TLS et la haute disponibilité des données.</p>\n        </div>\n        <div>\n          <h4 class="font-bold text-slate-900 text-sm mb-1">3. Propriété intellectuelle</h4>\n          <p>L'ensemble des interfaces, codes sources, logos, graphismes et marques constituant la plateforme MargeUp sont la propriété exclusive de MargeUp. Toute reproduction ou distribution non autorisée est formellement interdite.</p>\n        </div>\n      </div>\n    `;\n  } else if (type === 'confidentialite') {\n    title = 'Politique de Confidentialité & Protection des Données (CDP Sénégal)';\n    content = `\n      <div class="space-y-4 text-xs text-slate-700 leading-relaxed">\n        <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-emerald-950">\n          <p class="font-bold text-emerald-900"><i class="fa-solid fa-shield-halved"></i> Conformité à la Loi n° 2008-12 du 25 janvier 2008</p>\n          <p class="mt-1">MargeUp s'engage à respecter scrupuleusement la réglementation sénégalaise sur la protection des données à caractère personnel et les directives de la <b>Commission des Données Personnelles du Sénégal (CDP)</b>.</p>\n        </div>\n\n        <div>\n          <h4 class="font-bold text-slate-900 text-sm mb-1">1. Données collectées</h4>\n          <p>MargeUp collecte uniquement les données strictement nécessaires au fonctionnement du service :</p>\n          <ul class="list-disc list-inside space-y-1 mt-1 pl-1">\n            <li><b>Données de l'entreprise :</b> Raison sociale, ville, adresse, numéro de téléphone, e-mail de contact.</li>\n            <li><b>Données des collaborateurs :</b> Noms, e-mails, numéros de téléphone et rôles attribués (Direction, Magasinier, Transport).</li>\n            <li><b>Données d'exploitation :</b> Ventes au comptoir, stocks, fiches véhicules, consommations de carburant, pannes et registres de voyages.</li>\n          </ul>\n        </div>\n\n        <div>\n          <h4 class="font-bold text-slate-900 text-sm mb-1">2. Finalités du traitement</h4>\n          <p>Les données sont traitées pour :</p>\n          <ul class="list-disc list-inside space-y-1 mt-1 pl-1">\n            <li>L’exécution du contrat de service (accès aux modules métiers, calcul des marges, factures PDF).</li>\n            <li>La gestion des accès sécurisés et l'isolation des données par entreprise (Row-Level Security).</li>\n            <li>L’assistance client et le support technique par nos conseillers au Sénégal.</li>\n          </ul>\n        </div>\n\n        <div>\n          <h4 class="font-bold text-slate-900 text-sm mb-1">3. Non-divulgation et confidentialité stricte</h4>\n          <p><b>Vos données restent votre propriété exclusive.</b> MargeUp ne commercialise, ne loue et ne cède aucune donnée personnelle ou commerciale à des tiers.</p>\n        </div>\n\n        <div>\n          <h4 class="font-bold text-slate-900 text-sm mb-1">4. Vos droits (Accès, Rectification, Suppression)</h4>\n          <p>Conformément à la Loi n° 2008-12, vous disposez d'un droit d’accès, de rectification, d'opposition et de suppression de vos données personnelles.</p>\n          <p class="mt-1">Pour exercer vos droits, contactez notre délégué à la protection des données par courriel à : <a href="mailto:${CONTACT.email}" class="text-orange-600 underline font-bold">${CONTACT.email}</a>.</p>\n          <p class="mt-1">Vous pouvez également saisir la <b>Commission des Données Personnelles (CDP) du Sénégal</b> : <a href="https://www.cdp.sn" target="_blank" rel="noopener" class="text-emerald-700 underline font-semibold">www.cdp.sn</a>.</p>\n        </div>\n      </div>\n    `;\n  } else if (type === 'cgu') {\n    title = 'Conditions Générales d’Utilisation (CGU)';\n    content = `\n      <div class="space-y-4 text-xs text-slate-700 leading-relaxed">\n        <div>\n          <h4 class="font-bold text-slate-900 text-sm mb-1">1. Objet du service</h4>\n          <p>MargeUp fournit une solution logicielle en mode SaaS destinée aux entreprises de BTP, aux transporteurs et aux exploitants de quincailleries au Sénégal.</p>\n        </div>\n\n        <div>\n          <h4 class="font-bold text-slate-900 text-sm mb-1">2. Essai gratuit de 15 jours</h4>\n          <p>Toute nouvelle entreprise bénéficie d’un essai gratuit de 15 jours sans engagement et sans saisie de carte bancaire, permettant de tester l'ensemble des modules.</p>\n        </div>\n\n        <div>\n          <h4 class="font-bold text-slate-900 text-sm mb-1">3. Abonnements et modalités de règlement</h4>\n          <p>À l'issue de l'essai gratuit, l'accès se prolonge via la souscription d'un abonnement mensuel ou annuel. Le paiement s'effectue par <b>transfert direct Wave ou Orange Money</b> vers le numéro marchand agréé. La validation de l'abonnement intervient après transmission de la référence de paiement SMS.</p>\n        </div>\n\n        <div>\n          <h4 class="font-bold text-slate-900 text-sm mb-1">4. Responsabilité de l'utilisateur</h4>\n          <p>Chaque utilisateur est responsable de la confidentialité de ses identifiants et de l'exactitude des données de terrain saisies (stocks, ventes, litrages de carburant).</p>\n        </div>\n\n        <div>\n          <h4 class="font-bold text-slate-900 text-sm mb-1">5. Droit applicable et juridiction compétente</h4>\n          <p>Les présentes CGU sont soumises au droit sénégalais. Tout litige relatif à leur interprétation ou exécution relève de la compétence des tribunaux de Dakar.</p>\n        </div>\n      </div>\n    `;\n  }\n\n  openModal(`\n    <div class="border-b border-slate-200 pb-3">\n      <h3 class="text-lg font-black text-slate-900">${title}</h3>\n      <p class="text-xs text-slate-500">MargeUp Sénégal · Conforme à la législation en vigueur</p>\n    </div>\n    <div class="py-3 max-h-[70vh] overflow-y-auto custom-scrollbar">\n      ${content}\n    </div>\n    <div class="flex justify-end pt-3 border-t border-slate-200">\n      <button type="button" onclick="closeModal()" class="px-5 py-2.5 rounded-xl text-xs bg-slate-900 hover:bg-slate-800 text-white font-bold cursor-pointer">\n        Fermer\n      </button>\n    </div>\n  `);\n}\n\n/* ---------- PORTAIL DE CONNEXION / INSCRIPTION DIRECTE (LANDING ➔ ERP) ---------- */\nfunction openAuthPhase(mode = 'login', plan = '') {\n  document.querySelectorAll('main > section').forEach(s => s.classList.add('hidden'));\n  const vAuth = $('view-auth');\n  if (vAuth) {\n    vAuth.classList.remove('hidden');\n  }\n  switchAuthTab(mode);\n  if (plan && $('signup-plan')) {\n    $('signup-plan').value = plan;\n  }\n  window.scrollTo({ top: 0, behavior: 'smooth' });\n}\n\nfunction closeAuthPhase() {\n  const vAuth = $('view-auth');\n  if (vAuth) vAuth.classList.add('hidden');\n  switchTab(S.co ? (curRole || 'ceo') : 'accueil');\n  window.scrollTo({ top: 0, behavior: 'smooth' });\n}\n\nfunction switchAuthTab(mode) {\n  const btnLogin = $('tab-btn-login');\n  const btnSignup = $('tab-btn-signup');\n  const formLogin = $('form-auth-login');\n  const formSignup = $('form-auth-signup');\n\n  if (mode === 'login') {\n    if (btnLogin) btnLogin.className = 'flex-1 py-2 rounded-xl text-xs font-bold transition bg-yellow-400 text-slate-950 cursor-pointer';\n    if (btnSignup) btnSignup.className = 'flex-1 py-2 rounded-xl text-xs font-bold transition text-slate-400 hover:text-white cursor-pointer';\n    if (formLogin) formLogin.classList.remove('hidden');\n    if (formSignup) formSignup.classList.add('hidden');\n  } else {\n    if (btnLogin) btnLogin.className = 'flex-1 py-2 rounded-xl text-xs font-bold transition text-slate-400 hover:text-white cursor-pointer';\n    if (btnSignup) btnSignup.className = 'flex-1 py-2 rounded-xl text-xs font-bold transition bg-yellow-400 text-slate-950 cursor-pointer';\n    if (formLogin) formLogin.classList.add('hidden');\n    if (formSignup) formSignup.classList.remove('hidden');\n  }\n}\n\n// ---------------------------------------------------------------------------\n// Authentification Supabase – Session, Connexion, Inscription, OTP & Rôles\n// ---------------------------------------------------------------------------\n\n/**\n * Initialise la session utilisateur à partir de Supabase Auth et de me().\n * Retourne un état explicite parmi :\n * - 'success' : profil valide, rôle vérifié, accès ERP autorisé.\n * - 'password_change_required' : session valide mais mot de passe à changer impérativement (accès ERP bloqué, aucun logout).\n * - 'error' : session absente/invalide, échec me() ou rôle non autorisé.\n */\nasync function initUserSession(session) {\n  // Vérification de validité de session\n  if (!session || !session.user) {\n    await handleLogout(false);\n    return 'error';\n  }\n\n  const sb = getSupabase();\n  if (!sb) {\n    toast('Supabase non configuré.');\n    await handleLogout(false);\n    return 'error';\n  }\n\n  // 1️⃣ Appel RPC me() avec la session Supabase active\n  const { data: me, error: meErr } = await sb.rpc('me');\n  if (meErr || !me) {\n    const errMsg = 'Impossible de charger le profil : ' + (meErr?.message || 'Profil introuvable.');\n    toast(errMsg);\n    const errBox = $('login-error') || $('signup-error') || $('pwd-error');\n    if (errBox) errBox.textContent = errMsg;\n    await handleLogout(false);\n    return 'error';\n  }\n\n  // Vérification de présence de l’entreprise\n  if (!me.company || !me.company.id) {\n    const errMsg = 'Erreur : aucune entreprise associée à ce compte.';\n    toast(errMsg);\n    const errBox = $('login-error') || $('signup-error') || $('pwd-error');\n    if (errBox) errBox.textContent = errMsg;\n    await handleLogout(false);\n    return 'error';\n  }\n\n  // 2️⃣ Mise à jour de l’état global S à partir de me()\n  S.co = me.company || {};\n  if (S.co.name) S.co.nom = S.co.name;\n  if (S.co.email) S.co.email = S.co.email;\n  if (S.co.phone) S.co.tel = S.co.phone;\n  if (S.co.city) S.co.ville = S.co.city;\n\n  S.subscription = me.subscription || {};\n  S.features = me.features || {};\n\n  // 3️⃣ Rôle strict provenant exclusivement de me.role (vérifié avant tout accès et avant changement de mot de passe)\n  const roleMap = {\n    direction: 'ceo',\n    magasinier: 'magasinier',\n    transport: 'transport'\n  };\n  const role = roleMap[me.role];\n  if (!role) {\n    const errMsg = 'Erreur : rôle non autorisé ou inconnu (' + (me.role || 'aucun') + '). Accès à l’ERP refusé.';\n    toast(errMsg);\n    const errBox = $('login-error') || $('signup-error') || $('pwd-error');\n    if (errBox) errBox.textContent = errMsg;\n    await handleLogout(false);\n    return 'error';\n  }\n\n  // 4️⃣ Changement obligatoire de mot de passe\n  if (me.must_change_password) {\n    S.blocked = true;\n    toast('⚠️ Vous devez changer votre mot de passe avant de continuer.');\n    openPasswordChangeModal();\n    return 'password_change_required';\n  }\n\n  // Accès autorisé\n  S.blocked = false;\n  const vAuth = $('view-auth');\n  if (vAuth) vAuth.classList.add('hidden');\n\n  enterRole(role);\n  updateHeaderMode('erp');\n  switchTab(role);\n  applyPlanRestrictions();\n  toast('Connexion réussie · Espace ' + (ROLE_LABEL[role] || role) + ' ouvert !');\n  return 'success';\n}\n\n/**\n * Connexion (login) – identifiant e‑mail OU numéro de téléphone.\n * Normalisation : e-mail direct ou format serveur p<chiffres>@membres.margeup.invalid.\n * Le rôle provient exclusivement de me().\n */\nlet _lastSignupEmail = '';\nlet _resendCooldownSeconds = 0;\nlet _resendInterval = null;\n\nfunction updateResendButtonsUI() {\n  const isCooldown = _resendCooldownSeconds > 0;\n  const buttons = [\n    { btn: $('signup-resend-btn'), text: $('signup-resend-btn-text') },\n    { btn: $('login-resend-btn'), text: $('login-resend-btn-text') }\n  ];\n\n  buttons.forEach(({ btn, text }) => {\n    if (!btn) return;\n    if (isCooldown) {\n      btn.disabled = true;\n      btn.classList.add('opacity-50', 'cursor-not-allowed');\n      btn.classList.remove('hover:bg-slate-700');\n      if (text) text.textContent = `Patienter (${_resendCooldownSeconds}s)...`;\n    } else {\n      btn.disabled = false;\n      btn.classList.remove('opacity-50', 'cursor-not-allowed');\n      btn.classList.add('hover:bg-slate-700');\n      if (text) text.textContent = btn.id === 'signup-resend-btn' ? 'Renvoyer le code de confirmation' : 'Renvoyer le lien de confirmation';\n    }\n  });\n}\n\nfunction startResendCooldown(seconds = 60) {\n  _resendCooldownSeconds = seconds;\n  updateResendButtonsUI();\n  if (_resendInterval) clearInterval(_resendInterval);\n  _resendInterval = setInterval(() => {\n    _resendCooldownSeconds--;\n    if (_resendCooldownSeconds <= 0) {\n      clearInterval(_resendInterval);\n      _resendInterval = null;\n      _resendCooldownSeconds = 0;\n    }\n    updateResendButtonsUI();\n  }, 1000);\n}\n\n/**\n * Renvoyer l'e-mail de vérification Supabase pour un compte non encore validé.\n * Précaution 2 : Distingue bien l'acceptation de la demande par Supabase de la livraison effective de l'e-mail.\n * Le lien revient à l’adresse depuis laquelle l’application est ouverte.\n */\nfunction getAuthRedirectUrl() {\n  // Reprend l'adresse actuelle de l'application (localhost, réseau local ou site hébergé).\n  return new URL(window.location.pathname, window.location.origin).href;\n}\n\nasync function handleResendConfirmation(email, statusElId) {\n  const statusEl = $(statusElId);\n  if (statusEl) {\n    statusEl.textContent = '';\n    statusEl.className = 'text-[11px] font-medium min-h-[14px]';\n  }\n\n  const cleanEmail = (email || '').trim().toLowerCase();\n  if (!cleanEmail || !cleanEmail.includes('@')) {\n    const msg = 'Veuillez renseigner une adresse e-mail valide.';\n    if (statusEl) {\n      statusEl.className = 'text-[11px] text-rose-400 font-medium min-h-[14px]';\n      statusEl.textContent = msg;\n    }\n    toast(msg);\n    return;\n  }\n\n  if (_resendCooldownSeconds > 0) {\n    toast(`Veuillez patienter ${_resendCooldownSeconds}s avant une nouvelle demande.`);\n    return;\n  }\n\n  const sb = getSupabase();\n  if (!sb) {\n    const msg = 'Supabase non configuré.';\n    if (statusEl) {\n      statusEl.className = 'text-[11px] text-rose-400 font-medium min-h-[14px]';\n      statusEl.textContent = msg;\n    }\n    toast(msg);\n    return;\n  }\n\n  const buttons = [$('signup-resend-btn'), $('login-resend-btn')];\n  buttons.forEach(b => { if (b) { b.disabled = true; b.classList.add('opacity-50'); } });\n  if (statusEl) {\n    statusEl.className = 'text-[11px] text-slate-400 font-medium min-h-[14px]';\n    statusEl.textContent = 'Envoi de la demande à Supabase...';\n  }\n\n  const emailRedirectTo = getAuthRedirectUrl();\n\n  const { data, error } = await sb.auth.resend({\n    type: 'signup',\n    email: cleanEmail,\n    options: {\n      emailRedirectTo\n    }\n  });\n\n  buttons.forEach(b => { if (b) { b.disabled = false; b.classList.remove('opacity-50'); } });\n\n  if (error) {\n    let errText = error.message || 'Erreur lors de la demande de renvoi.';\n    const lower = errText.toLowerCase();\n    const isRateLimited = error.status === 429 ||\n                          lower.includes('rate limit') ||\n                          lower.includes('security purposes') ||\n                          lower.includes('over_email_send_rate_limit');\n\n    if (isRateLimited) {\n      errText = 'Limite d’envoi atteinte : pour des raisons de sécurité, veuillez patienter 60 secondes avant de redemander un code.';\n      startResendCooldown(60);\n    }\n\n    if (statusEl) {\n      statusEl.className = 'text-[11px] text-rose-400 font-medium min-h-[14px]';\n      statusEl.textContent = errText;\n    }\n    toast(errText);\n    return;\n  }\n\n  // Succès de la demande :\n  // Précaution 2 : Préciser expressément que l'acceptation de la demande par Supabase ne garantit pas la livraison finale dans la boîte de réception.\n  startResendCooldown(60);\n\n  const successHtml = `\n    <span class="text-emerald-400 font-bold block mb-1">✓ Demande de renvoi acceptée par Supabase.</span>\n    <span class="text-slate-300">\n      Un nouvel e-mail de vérification a été demandé pour <strong class="text-white">${esc(cleanEmail)}</strong>. Il contiendra un code à 6 chiffres si le modèle OTP est activé dans Supabase.<br>\n      <em>Note : l'acceptation de la demande par le serveur confirme sa prise en compte mais ne garantit pas la livraison finale dans votre boîte de réception. Pensez à vérifier vos dossiers Courriers indésirables / Spams.</em>\n    </span>\n  `;\n\n  if (statusEl) {\n    statusEl.className = 'text-[11px] text-left p-2.5 rounded-lg bg-emerald-950/40 border border-emerald-500/40 font-medium mt-1';\n    statusEl.innerHTML = successHtml;\n  }\n  toast('Demande de renvoi acceptée par Supabase.');\n}\n\nasync function handleSignupOtpVerify(e) {\n  e.preventDefault();\n  const statusEl = $('signup-otp-status');\n  const verifyBtn = $('signup-otp-verify-btn');\n  const tokenInput = $('signup-confirmation-token');\n  const email = (_lastSignupEmail || $('signup-email')?.value || '').trim().toLowerCase();\n  const token = (tokenInput?.value || '').replace(/\s/g, '');\n  const setStatus = (message, isError = false) => {\n    if (!statusEl) return;\n    statusEl.className = `text-[11px] font-medium min-h-[14px] ${isError ? 'text-rose-400' : 'text-slate-400'}`;\n    statusEl.textContent = message;\n  };\n\n  if (!email || !email.includes('@')) {\n    setStatus('Adresse e-mail introuvable. Recommencez l’inscription.', true);\n    return;\n  }\n  if (!/^\d{6}$/.test(token)) {\n    setStatus('Saisissez les 6 chiffres reçus par e-mail.', true);\n    tokenInput?.focus();\n    return;\n  }\n\n  const sb = getSupabase();\n  if (!sb) {\n    setStatus('Supabase n’est pas configuré.', true);\n    return;\n  }\n\n  if (verifyBtn) verifyBtn.disabled = true;\n  setStatus('Vérification du code…');\n  try {\n    const { data, error } = await sb.auth.verifyOtp({ email, token, type: 'signup' });\n    if (error) {\n      setStatus(error.message || 'Code invalide ou expiré. Demandez un nouveau code.', true);\n      return;\n    }\n    if (tokenInput) tokenInput.value = '';\n    setStatus('Adresse confirmée. Ouverture de votre espace…');\n    if (data?.session) {\n      await handleSessionAuth(data.session);\n    } else {\n      setStatus('Code accepté, mais aucune session reçue. Connectez-vous avec votre adresse et votre mot de passe.', true);\n    }\n  } catch (error) {\n    console.error('[MargeUp] Erreur de vérification OTP:', error);\n    setStatus('Impossible de vérifier ce code. Réessayez.', true);\n  } finally {\n    if (verifyBtn) verifyBtn.disabled = false;\n  }\n}\n\nfunction triggerResendFromSignup() {\n  const email = ($('signup-email')?.value || _lastSignupEmail || '').trim();\n  handleResendConfirmation(email, 'signup-resend-status');\n}\n\nfunction triggerResendFromLogin() {\n  const ident = ($('login-identifier')?.value || '').trim();\n  handleResendConfirmation(ident, 'login-resend-status');\n}\n\nasync function handleSupabaseLogin(e) {\n  e.preventDefault();\n  const ident = ($('login-identifier')?.value || '').trim();\n  const password = $('login-password')?.value || '';\n  const errBox = $('login-error');\n  const loginResendBox = $('login-resend-box');\n  const loginResendStatus = $('login-resend-status');\n  if (errBox) errBox.textContent = '';\n  if (loginResendBox) loginResendBox.classList.add('hidden');\n  if (loginResendStatus) {\n    loginResendStatus.textContent = '';\n    loginResendStatus.className = 'text-[11px] font-medium min-h-[14px]';\n  }\n\n  if (!ident || !password) {\n    if (errBox) errBox.textContent = 'Identifiant et mot de passe requis.';\n    return;\n  }\n\n  const sb = getSupabase();\n  if (!sb) {\n    if (errBox) errBox.textContent = 'Supabase non configuré.';\n    return;\n  }\n\n  // Normalisation du téléphone au format serveur p<digits>@membres.margeup.invalid\n  const email = ident.includes('@')\n    ? ident.toLowerCase()\n    : `p${ident.replace(/\D/g, '')}@membres.margeup.invalid`;\n\n  const { data, error: signInErr } = await sb.auth.signInWithPassword({ email, password });\n  if (signInErr) {\n    const errMsg = signInErr.message || '';\n    if (errBox) errBox.textContent = errMsg;\n    toast(errMsg);\n\n    // Détection d'un compte non confirmé\n    const lowerMsg = errMsg.toLowerCase();\n    const isUnconfirmed = lowerMsg.includes('not confirmed') ||\n                          lowerMsg.includes('non confirmé') ||\n                          signInErr.code === 'email_not_confirmed';\n    if (isUnconfirmed && ident.includes('@')) {\n      if (loginResendBox) loginResendBox.classList.remove('hidden');\n    }\n    return;\n  }\n\n  if ($('login-password')) $('login-password').value = '';\n\n  const status = await initUserSession(data.session);\n  if (status === 'error') {\n    // initUserSession a affiché l'erreur et nettoyé l'état via handleLogout(false)\n    return;\n  }\n}\n\n/**\n * Inscription : crée l’utilisateur Supabase Auth avec e-mail et mot de passe,\n * transmet les métadonnées de l'entreprise dans options.data et configure emailRedirectTo.\n * Le mot de passe n'est JAMAIS inclus dans options.data ni conservé en variable globale.\n */\nasync function handleSupabaseSignup(e) {\n  e.preventDefault();\n  const name = ($('signup-nom')?.value || '').trim();\n  const manager = ($('signup-resp')?.value || '').trim();\n  const city = ($('signup-ville')?.value || '').trim();\n  const phone = ($('signup-tel')?.value || '').trim();\n  const email = ($('signup-email')?.value || '').trim().toLowerCase();\n  const password = $('signup-pw')?.value || '';\n  const planRaw = ($('signup-plan')?.value || 'all');\n  const errBox = $('signup-error');\n  if (errBox) errBox.textContent = '';\n\n  if (!name || !manager || !email.includes('@') || phone.replace(/\D/g, '').length < 9) {\n    if (errBox) errBox.textContent = 'Nom de l’entreprise, responsable, e-mail et téléphone valides (min. 9 chiffres) sont obligatoires.';\n    return;\n  }\n  if (password.length < 4) {\n    if (errBox) errBox.textContent = 'Le mot de passe doit comporter au moins 4 caractères.';\n    return;\n  }\n\n  const sb = getSupabase();\n  if (!sb) {\n    if (errBox) errBox.textContent = 'Supabase non configuré.';\n    return;\n  }\n\n  // Mapping strict de la formule d'abonnement\n  const planMap = {\n    'all': 'tout_en_un',\n    'tout_en_un': 'tout_en_un',\n    'hybrid_b2b_b2c': 'hybride',\n    'hybride': 'hybride',\n    'b2c_retail': 'detail',\n    'detail': 'detail',\n    'fleet_custom': 'flotte',\n    'flotte': 'flotte',\n    'entreprise': 'entreprise'\n  };\n  const plan = planMap[planRaw] || 'tout_en_un';\n\n  const emailRedirectTo = getAuthRedirectUrl();\n\n  // Inscription Supabase Auth : métadonnées transmises dans options.data\n  const { data, error: signErr } = await sb.auth.signUp({\n    email,\n    password,\n    options: {\n      emailRedirectTo,\n      data: {\n        company_name: name,\n        manager_name: manager,\n        city,\n        phone,\n        plan\n      }\n    }\n  });\n\n  if (signErr) {\n    if (errBox) errBox.textContent = signErr.message;\n    toast(signErr.message);\n    return;\n  }\n\n  // Effacer le mot de passe du champ et ne JAMAIS le stocker\n  if ($('signup-pw')) $('signup-pw').value = '';\n  _lastSignupEmail = email;\n\n  // Affichage du message de confirmation d'e-mail et masquage du bouton de soumission\n  const confirmBox = $('signup-confirmation-sent');\n  const confirmMsg = $('signup-confirmation-message');\n  if (confirmBox) confirmBox.classList.remove('hidden');\n\n  const submitBtn = e.target.querySelector('button[type="submit"]');\n  if (submitBtn) submitBtn.classList.add('hidden');\n\n  // Supabase Auth : lorsque l'inscription est répétée pour un compte existant,\n  // data.user est retourné avec un tableau identities vide ([]).\n  const isRepeatedSignup = data?.user && Array.isArray(data.user.identities) && data.user.identities.length === 0;\n\n  if (isRepeatedSignup) {\n    // Précaution 1 : Proposition de renvoi sans révéler inutilement si l'adresse possède déjà un compte\n    if (confirmMsg) {\n      confirmMsg.innerHTML = `\n        Vérification requise : si une inscription est déjà en cours pour cette adresse, demandez un nouveau code de confirmation ci-dessous.<br>\n        <strong>Saisissez ensuite les 6 chiffres reçus par e-mail.</strong>\n      `;\n    }\n    toast('Vérification requise : vous pouvez demander le renvoi du code.');\n  } else {\n    if (confirmMsg) {\n      confirmMsg.innerHTML = `\n        Un e-mail de confirmation vient de vous être envoyé.<br>\n        <strong>Saisissez le code à 6 chiffres</strong> reçu par e-mail pour valider votre compte et créer automatiquement votre espace d'entreprise.\n      `;\n    }\n    toast('E-mail de confirmation envoyé à ' + email + ' !');\n  }\n}\n\n/**\n * Affiche l’écran de changement de mot de passe obligatoire.\n */\nfunction openPasswordChangeModal() {\n  openModal(`\n    <div class="space-y-4">\n      <div class="flex items-center space-x-3 text-amber-600">\n        <i class="fa-solid fa-key text-xl"></i>\n        <h3 class="text-base font-bold text-slate-900">Changement obligatoire de mot de passe</h3>\n      </div>\n      <p class="text-xs text-slate-600">Votre mot de passe doit être modifié avant de pouvoir accéder à votre espace de travail.</p>\n      <form onsubmit="handlePasswordChangeSubmit(event)" class="space-y-3">\n        <div>\n          <label class="block text-xs font-semibold text-slate-700 mb-1">Nouveau mot de passe *</label>\n          <input id="pwd-new" type="password" required minlength="6" placeholder="Au moins 6 caractères" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs text-slate-900 focus:outline-none focus:border-yellow-400">\n        </div>\n        <div>\n          <label class="block text-xs font-semibold text-slate-700 mb-1">Confirmer le nouveau mot de passe *</label>\n          <input id="pwd-confirm" type="password" required minlength="6" placeholder="Confirmez le mot de passe" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs text-slate-900 focus:outline-none focus:border-yellow-400">\n        </div>\n        <div id="pwd-error" class="text-xs text-rose-500 font-semibold min-h-[16px]"></div>\n        <div class="flex justify-end gap-2 pt-2">\n          <button type="button" onclick="handleLogout()" class="px-4 py-2 rounded-xl text-xs bg-slate-100 text-slate-600 hover:bg-slate-200">Déconnexion</button>\n          <button type="submit" class="px-4 py-2 rounded-xl text-xs bg-yellow-400 text-slate-950 font-bold hover:bg-yellow-300">Enregistrer</button>\n        </div>\n      </form>\n    </div>\n  `);\n}\n\n/**\n * Traitement du formulaire de changement de mot de passe obligatoire.\n */\nasync function handlePasswordChangeSubmit(e) {\n  e.preventDefault();\n  const pwd1 = $('pwd-new')?.value || '';\n  const pwd2 = $('pwd-confirm')?.value || '';\n  const errBox = $('pwd-error');\n\n  if (!pwd1 || pwd1.length < 6) {\n    if (errBox) errBox.textContent = 'Le mot de passe doit comporter au moins 6 caractères.';\n    return;\n  }\n  if (pwd1 !== pwd2) {\n    if (errBox) errBox.textContent = 'Les deux mots de passe ne correspondent pas.';\n    return;\n  }\n\n  const sb = getSupabase();\n  if (!sb) {\n    if (errBox) errBox.textContent = 'Supabase non configuré.';\n    return;\n  }\n\n  // 1️⃣ Mise à jour auth.updateUser\n  const { error: updErr } = await sb.auth.updateUser({ password: pwd1 });\n  if (updErr) {\n    if (errBox) errBox.textContent = updErr.message;\n    toast(updErr.message);\n    return;\n  }\n\n  // 2️⃣ Validation RPC côté serveur complete_password_change\n  const { error: rpcErr } = await sb.rpc('complete_password_change');\n  if (rpcErr) {\n    if (errBox) errBox.textContent = rpcErr.message;\n    toast(rpcErr.message);\n    return;\n  }\n\n  // 3️⃣ Récupération sécurisée de la session active\n  const { data: { session }, error: sessErr } = await sb.auth.getSession();\n  if (sessErr || !session) {\n    if (errBox) errBox.textContent = 'Session introuvable après mise à jour. Veuillez vous reconnecter.';\n    toast('Erreur de session. Veuillez vous reconnecter.');\n    await handleLogout(false);\n    return;\n  }\n\n  // 4️⃣ Validation du profil et autorisation d’accès ERP\n  const status = await initUserSession(session);\n  if (status === 'success') {\n    closeModal();\n    toast('Mot de passe mis à jour avec succès !');\n  } else if (status === 'password_change_required') {\n    if (errBox) errBox.textContent = 'Le changement de mot de passe n’a pas encore été validé par le serveur.';\n    toast('Veuillez renouveler l’opération.');\n  } else {\n    // status === 'error' : initUserSession a déjà affiché l'erreur et nettoyé l'état via handleLogout(false)\n    closeModal();\n  }\n}\n\n/**\n * Réinitialise l’état applicatif local sans émettre de toast ni appeler signOut.\n * Garantit qu’aucun ancien état ERP ne reste accessible lorsqu’une session est absente ou invalide.\n */\nfunction clearLocalState() {\n  S = {};\n  curUser = null;\n  curRole = null;\n  try {\n    sessionStorage.removeItem('safebtp.role');\n    sessionStorage.removeItem('safebtp.user');\n  } catch (e) {}\n\n  const vAuth = $('view-auth');\n  if (vAuth) vAuth.classList.remove('hidden');\n  updateHeaderMode('landing');\n  switchTab('accueil');\n}\n\nlet _isLoggingOut = false;\n\n/**\n * Déconnexion – vide l’état local complet et appelle signOut() si demandé.\n * Le paramètre triggerSignOut évite les boucles lors de l’événement SIGNED_OUT.\n */\nasync function handleLogout(triggerSignOut = true) {\n  if (_isLoggingOut) return;\n  _isLoggingOut = true;\n  try {\n    if (triggerSignOut) {\n      const sb = getSupabase();\n      if (sb) {\n        try { await sb.auth.signOut(); } catch (e) {}\n      }\n    }\n    clearLocalState();\n    toast('Déconnecté.');\n  } finally {\n    _isLoggingOut = false;\n  }\n}\n\nlet _authListenerRegistered = false;\nlet _isProcessingAuth = false;\n\n/**\n * Traite une session Supabase active :\n * 1. Vérifie si l'entreprise existe déjà via me().\n * 2. Si aucune entreprise n'est associée, crée l'entreprise via create_company avec les métadonnées d'inscription.\n * 3. Charge le profil et ouvre l'ERP via initUserSession().\n */\nasync function handleSessionAuth(session) {\n  if (!session || !session.user) {\n    clearLocalState();\n    return;\n  }\n  if (_isProcessingAuth) return;\n  _isProcessingAuth = true;\n\n  try {\n    const sb = getSupabase();\n    if (!sb) {\n      clearLocalState();\n      return;\n    }\n\n    // 1️⃣ Contrôle préalable : l'entreprise existe-t-elle déjà ?\n    const { data: me, error: meErr } = await sb.rpc('me');\n\n    if (!meErr && me && me.company && me.company.id) {\n      // L'entreprise existe déjà : entrée directe dans l'ERP\n      await initUserSession(session);\n      return;\n    }\n\n    // 2️⃣ Aucune entreprise trouvée : vérification des métadonnées d'inscription\n    const meta = session.user.user_metadata || {};\n    const companyName = meta.company_name;\n    const managerName = meta.manager_name;\n    const city = meta.city || 'Dakar';\n    const phone = meta.phone || '';\n    const plan = meta.plan || 'tout_en_un';\n\n    if (companyName && managerName) {\n      // Création de l'entreprise via create_company\n      const { data: newCo, error: createErr } = await sb.rpc('create_company', {\n        p_name: companyName,\n        p_manager: managerName,\n        p_city: city,\n        p_phone: phone,\n        p_email: session.user.email,\n        p_plan: plan,\n        p_units: 1\n      });\n\n      if (createErr) {\n        console.error('[MargeUp] Erreur create_company:', createErr);\n        toast('Erreur création entreprise : ' + createErr.message);\n        // Si l'entreprise existait déjà côté base, tentative d'initialisation du profil\n        await initUserSession(session);\n        return;\n      }\n\n      toast('Entreprise créée avec succès ! Bienvenue sur MargeUp.');\n      await initUserSession(session);\n      return;\n    }\n\n    // Si aucune métadonnée d'inscription n'est disponible et que me() a échoué\n    await initUserSession(session);\n  } finally {\n    _isProcessingAuth = false;\n  }\n}\n\n/**\n * Restauration de session au chargement de la page.\n * Gère le retour du lien de confirmation Supabase et la session active.\n */\nasync function restoreSession() {\n  const sb = getSupabase();\n  if (!sb) {\n    clearLocalState();\n    return;\n  }\n\n  try {\n    const { data, error } = await sb.auth.getSession();\n    const session = data?.session;\n    if (error || !session) {\n      // Aucune session existante ou erreur getSession\n      clearLocalState();\n    } else {\n      await handleSessionAuth(session);\n    }\n  } catch (e) {\n    console.warn('[MargeUp] Erreur restauration session:', e);\n    clearLocalState();\n  }\n\n  // Écoute explicite des événements Supabase Auth (enregistrée une seule fois)\n  if (!_authListenerRegistered) {\n    _authListenerRegistered = true;\n    sb.auth.onAuthStateChange(async (event, session) => {\n      if (event === 'SIGNED_OUT') {\n        handleLogout(false);\n      } else if (event === 'SIGNED_IN' && session) {\n        // Validation du lien e-mail ou connexion réussie\n        if (!S.co || !S.co.id) {\n          await handleSessionAuth(session);\n        }\n      }\n    });\n  }\n}\n\n// Restauration automatique au chargement\nrestoreSession();\n\nfunction updateHeaderMode(mode) {\n  const hLanding = $('header-landing');\n  const hErp = $('header-erp');\n  const navErp = $('nav-erp-tabs');\n  const subTitle = $('erp-co-subtitle');\n\n  if (mode === 'erp') {\n    if (hLanding) hLanding.classList.add('hidden');\n    if (hErp) hErp.classList.remove('hidden');\n    if (navErp) navErp.classList.remove('hidden');\n    if (subTitle && S.co) {\n      subTitle.textContent = S.co.nom + (S.co.ville ? ' · ' + S.co.ville : '');\n    }\n  } else {\n    if (hLanding) hLanding.classList.remove('hidden');\n    if (hErp) hErp.classList.add('hidden');\n    if (navErp) navErp.classList.add('hidden');\n  }\n}\n\nasync function logoutERP() {\n  await handleLogout();\n}\n
+/* MargeUp - logique de l'application (v4)
+   Données : enregistrées dans le navigateur (localStorage) pour l'instant.
+   Quand Supabase sera branché, seules les fonctions load() et save() changeront. */
+
+/* ---------- RÉGLAGES & CONFIGURATION ---------- */
+const CFG = window.MARGEUP_CONFIG || { pay: { wave: '', om: '', num: '' }, contact: { tel: '771906476', email: 'margeup0@gmail.com' } };
+const PAY = CFG.pay || { wave: '', om: '', num: '' };
+
+/* ---------- CLIENT SUPABASE & SYNCHRONISATION MULTI-APPAREILS ---------- */
+let _sbClient = null;
+
+function getSupabase() {
+  if (_sbClient) return _sbClient;
+  const cfg = window.MARGEUP_CONFIG?.supabase;
+  const key = cfg?.anonKey || cfg?.publishableKey;
+  if (cfg && cfg.url && key && window.supabase) {
+    try {
+      _sbClient = window.supabase.createClient(cfg.url, key);
+      return _sbClient;
+    } catch (e) {
+      console.warn('[MargeUp] Erreur initialisation Supabase client:', e);
+    }
+  }
+  return null;
+}
+
+// File d'attente hors-ligne (Offline Queue) pour le stock et les ventes
+const OFFLINE_QUEUE_KEY = 'margeup_offline_queue_v1';
+
+function getOfflineQueue() {
+  try {
+    return JSON.parse(localStorage.getItem(OFFLINE_QUEUE_KEY) || '[]');
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveOfflineQueue(queue) {
+  try {
+    localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
+  } catch (e) {}
+  updateSyncIndicator();
+}
+
+function enqueueOfflineAction(action, payload) {
+  const queue = getOfflineQueue();
+  queue.push({
+    id: uid(),
+    action,
+    payload,
+    timestamp: new Date().toISOString()
+  });
+  saveOfflineQueue(queue);
+  toast('Saisie enregistrée en local (mode hors-ligne)');
+}
+
+async function processOfflineQueue() {
+  const sb = getSupabase();
+  if (!sb || !navigator.onLine) {
+    updateSyncIndicator();
+    return;
+  }
+  const queue = getOfflineQueue();
+  if (!queue.length) {
+    updateSyncIndicator();
+    return;
+  }
+
+  const remaining = [];
+  for (const item of queue) {
+    try {
+      if (item.action === 'stock') {
+        const d = item.payload;
+        await sb.from('articles').upsert({
+          company_id: S.co?.id,
+          nom: d.name,
+          categorie: d.cat || 'Divers',
+          unite: d.unit || 'unités',
+          stock_actuel: d.qty,
+          prix_detail: d.price || 0,
+          prix_gros: d.priceGros || d.price || 0
+        });
+      } else if (item.action === 'sale') {
+        const s = item.payload;
+        await sb.from('ventes').insert({
+          company_id: S.co?.id,
+          numero_facture: s.num,
+          client_nom: s.client?.nom || 'Client comptoir',
+          client_tel: s.client?.tel || '',
+          type_vente: s.stype || 'detail',
+          mode_paiement: s.pay || 'Espèces',
+          montant_total: s.total || 0,
+          date_vente: s.date || day()
+        });
+      }
+    } catch (err) {
+      console.warn('[MargeUp Sync] Erreur synchro item queue:', err);
+      remaining.push(item);
+    }
+  }
+
+  saveOfflineQueue(remaining);
+  if (queue.length > remaining.length) {
+    toast((queue.length - remaining.length) + ' opération(s) synchronisée(s) vers le Cloud !');
+    await syncDataFromCloud();
+  }
+}
+
+// Synchronisation bidirectionnelle depuis Supabase
+async function syncDataFromCloud() {
+  const sb = getSupabase();
+  if (!sb || !navigator.onLine || !S.co?.id) return;
+  try {
+    const { data: articles, error: errArt } = await sb.from('articles').select('*').eq('company_id', S.co.id);
+    if (!errArt && articles && articles.length) {
+      S.inventory = articles.map(a => ({
+        id: a.id,
+        depot: 'd1',
+        name: a.nom,
+        cat: a.categorie,
+        qty: Number(a.stock_actuel),
+        unit: a.unite,
+        price: Number(a.prix_detail),
+        priceGros: Number(a.prix_gros)
+      }));
+    }
+
+    const { data: ventes, error: errVen } = await sb.from('ventes').select('*').eq('company_id', S.co.id).order('created_at', { ascending: false });
+    if (!errVen && ventes && ventes.length) {
+      S.sales = ventes.map(v => ({
+        id: v.id,
+        num: v.numero_facture,
+        depot: 'd1',
+        date: v.date_vente,
+        stype: v.type_vente,
+        kind: 'particulier',
+        client: { nom: v.client_nom, tel: v.client_tel },
+        pay: v.mode_paiement,
+        lines: [],
+        total: Number(v.montant_total)
+      }));
+    }
+
+    save();
+    renderAll();
+  } catch (e) {
+    console.warn('[MargeUp Cloud Sync]', e);
+  }
+}
+
+// Indicateur visuel d'état de synchronisation
+function updateSyncIndicator() {
+  const el = $('syncIndicator');
+  if (!el) return;
+  const queue = getOfflineQueue();
+  const sb = getSupabase();
+
+  if (!navigator.onLine) {
+    el.innerHTML = '<span class="w-2 h-2 rounded-full bg-amber-500"></span> <span>Hors-ligne' + (queue.length ? ' (' + queue.length + ' en attente)' : '') + '</span>';
+    el.className = 'hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200';
+  } else if (!sb) {
+    el.innerHTML = '<span class="w-2 h-2 rounded-full bg-slate-400"></span> <span>Mode Local</span>';
+    el.className = 'hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200';
+  } else if (queue.length > 0) {
+    el.innerHTML = '<span class="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span> <button onclick="processOfflineQueue()" class="hover:underline">Synchro (' + queue.length + ' en attente)</button>';
+    el.className = 'hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-blue-50 text-blue-800 border border-blue-200 cursor-pointer';
+  } else {
+    el.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-500"></span> <span>En ligne & Synchronisé</span>';
+    el.className = 'hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200';
+  }
+}
+
+window.addEventListener('online', () => {
+  updateSyncIndicator();
+  processOfflineQueue();
+});
+window.addEventListener('offline', updateSyncIndicator);
+
+const CONTACT = { tel: '771906476', email: 'margeup0@gmail.com' };
+const TRIAL_DAYS = 15;
+const KEY = 'safebtp.v3', KA = 'safebtp.admin.v3';
+
+/* ---------- GESTION DU CODE DE VÉRIFICATION PAR E-MAIL ---------- */
+let verificationCode = null;
+let pendingCompanyData = null;
+let verificationExpiry = null;
+
+// Exposition globale pour tests et inspection
+if (typeof window !== 'undefined') {
+  Object.defineProperty(window, 'verificationCode', {
+    get() { return verificationCode; },
+    set(v) { verificationCode = v; },
+    configurable: true
+  });
+}
+const PHASES = [['terr','Terrassement et fondations'],['gros','Gros œuvre (élévation)'],['dalle','Dalles et toiture'],['maco','Maçonnerie et enduits'],['elec','Électricité et plomberie'],['fin','Carrelage et peinture'],['rec','Finitions et réception']];
+const TYPE_IMG = { tracteur: 'images/engins.jpg', toupie: 'images/engins.jpg', benne: 'images/engins.jpg' }; // une seule photo d'engins pour l'instant : ajoutez shacman.jpg / toupie.jpg puis changez ici
+const ROLE_LABEL = { magasinier: 'Magasinier', transport: 'Transport', chantier: 'Chef de chantier' };
+const GATED = ['ceo','magasinier','transport','chantier'];
+const INPUT = 'w-full bg-white border border-slate-300 rounded-xl p-2.5 text-sm text-slate-900 focus:outline-none focus:border-yellow-400 focus:ring-1 focus:ring-yellow-400';
+
+/* ---------- OUTILS ---------- */
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fm = n => Math.round(n).toLocaleString('fr-FR');
+const uid = () => Math.random().toString(36).slice(2, 9);
+function day(n) { const d = new Date(); d.setDate(d.getDate() + (n || 0)); return d.toISOString().slice(0, 10); }
+function addDays(iso, n) { const d = new Date(iso + 'T12:00'); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); }
+const fr = d => d ? d.split('-').reverse().join('/') : '—';
+const daysLeft = iso => Math.round((new Date(iso + 'T12:00') - new Date(day() + 'T12:00')) / 864e5);
+function toast(t) {
+  let e = $('toast');
+  if (!e) { e = document.createElement('div'); e.id = 'toast'; e.className = 'fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-800 border border-slate-700 text-white text-xs font-semibold px-4 py-2.5 rounded-xl z-[70] hidden'; document.body.appendChild(e); }
+  e.textContent = t; e.classList.remove('hidden'); clearTimeout(e._t); e._t = setTimeout(() => e.classList.add('hidden'), 3200);
+}
+
+/* ---------- GESTION DES UNITÉS & CONVERSIONS QUINCAILLERIE ---------- */
+// Règle d'or sénégalaise BTP : 1 tonne de ciment = 20 sacs de 50 kg
+function isCementOrTonne(item) {
+  if (!item) return false;
+  const n = (item.name || '').toLowerCase();
+  const u = (item.unit || '').toLowerCase();
+  const c = (item.cat || '').toLowerCase();
+  return n.includes('ciment') || u.includes('tonne') || c.includes('ciment') || item.uom_ratio === 20;
+}
+
+function formatMaterialQty(itemOrQty, unitName) {
+  let qty = typeof itemOrQty === 'object' ? (itemOrQty.qty || 0) : Number(itemOrQty || 0);
+  let u = typeof itemOrQty === 'object' ? (itemOrQty.unit || '').toLowerCase() : (unitName || '').toLowerCase();
+  let name = typeof itemOrQty === 'object' ? (itemOrQty.name || '').toLowerCase() : '';
+
+  const isTonneOrSac = u.includes('tonne') || u.includes('sac') || name.includes('ciment');
+  if (!isTonneOrSac) {
+    return fm(qty) + ' ' + (typeof itemOrQty === 'object' ? esc(itemOrQty.unit || 'unités') : (unitName || ''));
+  }
+
+  // 1 tonne = 20 sacs de 50 kg
+  let totalSacs = 0;
+  if (u.includes('tonne')) {
+    totalSacs = Math.round(qty * 20 * 100) / 100;
+  } else {
+    totalSacs = Math.round(qty * 100) / 100;
+  }
+
+  const tonnes = Math.floor(totalSacs / 20);
+  const sacs = Math.round((totalSacs % 20) * 10) / 10;
+
+  if (tonnes > 0 && sacs > 0) {
+    return tonnes + ' tonne' + (tonnes > 1 ? 's' : '') + ' et ' + sacs + ' sac' + (sacs > 1 ? 's' : '') + ' (' + fm(totalSacs) + ' sacs)';
+  } else if (tonnes > 0 && sacs === 0) {
+    return fm(tonnes) + ' tonne' + (tonnes > 1 ? 's' : '') + ' (' + fm(totalSacs) + ' sacs)';
+  } else {
+    return sacs + ' sac' + (sacs > 1 ? 's' : '');
+  }
+}
+
+
+/* ---------- DONNÉES ---------- */
+function defaultReviews() {
+  return [
+    {
+      id: 'rev-1',
+      author: 'Mamadou Ndiaye',
+      role: 'Directeur Général',
+      company: 'Sahel BTP & Génie Civil',
+      city: 'Dakar / Diamniadio',
+      rating: 5,
+      date: day(-3),
+      tag: 'Flotte & Carburant',
+      isExample: true,
+      text: "Grâce à MargeUp, nous avons enfin une visibilité en direct sur la consommation de nos camions bennes et le nombre de tours quotidiens entre la carrière de Bargny et nos chantiers. Le contrôle précis du carburant nous a permis d'optimiser nos charges dès le premier mois."
+    },
+    {
+      id: 'rev-2',
+      author: 'Fatou Bintou Diop',
+      role: 'Gérante Propriétaire',
+      company: 'Quincaillerie Moderne du Rail',
+      city: 'Thiès',
+      rating: 5,
+      date: day(-8),
+      tag: 'Quincaillerie & Vente',
+      isExample: true,
+      text: "Le double guichet B2C/B2B et l’impression des reçus thermiques ont changé notre quotidien. Le stock de ciment et fer à béton est à jour en direct, sans inventaire de fin de mois douloureux. Mes magasiniers l'adorent."
+    },
+    {
+      id: 'rev-3',
+      author: 'Cheikh Oumar Tall',
+      role: 'Responsable Flotte & Logistique',
+      company: 'Trans-Sénégal Express',
+      city: 'Rufisque',
+      rating: 5,
+      date: day(-15),
+      tag: 'Transport & Rotations',
+      isExample: true,
+      text: "Le suivi des voyages avec les lieux précis de départ et de déchargement a complètement transformé notre contrôle. Le classement des chauffeurs avec prime au mérite a motivé toute l'équipe et diminué les pannes évitables."
+    },
+    {
+      id: 'rev-4',
+      author: 'Ing. Awa Sarr',
+      role: 'Directrice des Travaux',
+      company: 'Consortium Teranga Bâtiment',
+      city: 'Diamniadio',
+      rating: 5,
+      date: day(-22),
+      tag: 'BTP & Matériaux',
+      isExample: true,
+      text: "L'imputation directe des sorties de stock et dépenses au bon chantier permet de piloter la vraie marge nette sans mauvaise surprise. Un ERP simple et adapté aux réalités sénégalaises."
+    }
+  ];
+}
+
+function seed() {
+  return {
+    co: null, trial: null, sub: null, demo: true, roles: {}, team: [], seq: 3,
+    reviews: defaultReviews(),
+    depots: [{ id: 'd1', nom: 'Quincaillerie principale' }],
+    sales: [
+      { id: 'v3', num: 'FAC-2026-0003', depot: 'd1', date: day(-1), stype: 'detail', kind: 'particulier', client: { nom: 'Client comptoir Dangote', tel: '' }, pay: 'Espèces', lines: [{ item: 1, name: 'Ciment Dangote CPJ 42.5', unit: 'sacs', qty: 2, pu: 4250 }], total: 8500 },
+      { id: 'v1', num: 'FAC-2026-0001', depot: 'd1', date: day(-2), stype: 'detail', kind: 'particulier', client: { nom: 'Client comptoir', tel: '' }, pay: 'Espèces', lines: [{ item: 1, name: 'Ciment Dangote CPJ 42.5', unit: 'sacs', qty: 5, pu: 4500 }], total: 22500 },
+      { id: 'v2', num: 'FAC-2026-0002', depot: 'd1', date: day(-2), stype: 'gros', kind: 'entreprise', client: { nom: 'Entreprise Sow et Frères', tel: '771234567' }, pay: 'Wave', lines: [{ item: 1, name: 'Ciment Dangote CPJ 42.5 (3 tonnes / 60 sacs)', unit: 'sacs', qty: 60, pu: 3800 }, { item: 3, name: 'Tuyaux PEHD Pression Ø110mm', unit: 'mètres', qty: 50, pu: 7000 }], total: 578000 }
+    ],
+    chantiers: [
+      { id: 'lycee', nom: 'Chantier Lycée', budget: 95000000 },
+      { id: 'brt', nom: 'Chantier BRT Dakar - Section 3', budget: 120000000 },
+      { id: 'diamniadio', nom: 'Chantier Tour Diamniadio', budget: 150000000 },
+      { id: 'thies', nom: 'Chantier Autoroute Thiès-Touba', budget: 85000000 }
+    ],
+    inventory: [
+      { id: 1, name: 'Ciment Dangote CPJ 42.5', cat: 'Cimenterie', qty: 24, unit: 'tonne', price: 4250, priceGros: 3800, depot: 'd1', lastChantier: 'lycee', sale_unit: 'sac 50kg', uom_ratio: 20, seuil: 5 },
+      { id: 2, name: 'Fer à Béton FeE500 Ø12mm', cat: 'Acierie', qty: 45, unit: 'tonnes', price: 480000, priceGros: 460000, depot: 'd1', lastChantier: 'Tour Diamniadio', sale_unit: 'barre 6m', uom_ratio: 1, seuil: 5 },
+      { id: 3, name: 'Tuyaux PEHD Pression Ø110mm', cat: 'Plomberie/PEHD', qty: 180, unit: 'mètres', price: 7500, priceGros: 7000, depot: 'd1', lastChantier: 'BRT Dakar', seuil: 20 },
+      { id: 4, name: 'Sable de Dune (Camion 16m3)', cat: 'Agrégats', qty: 25, unit: 'camions', price: 90000, priceGros: 85000, depot: 'd1', lastChantier: 'Thiès Autoroute', seuil: 3 }
+    ],
+    pannes: [
+      { id: 1, date: day(-3), vehicle: 'Shacman X3000 (DK-8891-BG)', driver: 'Modou Diop', diag: 'Fissure durite de refroidissement + Surchauffe', severity: 'Moyenne', status: 'En Réparation', cost: 185000 },
+      { id: 2, date: day(-6), vehicle: 'Toupie Mercedes Arocs (DK-4102-BH)', driver: 'Ibrahima Sarr', diag: 'Usure plaquettes de frein avant', severity: 'Faible', status: 'Terminé', cost: 95000 },
+      { id: 3, date: day(-2), vehicle: 'Camion Benne Volvo FMX (DK-1029-BF)', driver: 'Alioune Badara', diag: "Panne d'injecteur Diesel", severity: 'Critique', status: 'En Attente Pièce', cost: 650000 }
+    ],
+    expenses: [
+      { id: 1, chantier: 'lycee', date: day(-1), title: 'Livraison 24 tonnes Ciment Dangote', source: 'Quincaillerie principale', cat: 'Matériaux', amount: 9120000 },
+      { id: 2, chantier: 'brt', date: day(-2), title: 'Carburant Gazole Toupie Shacman', source: 'Station Shell Diamniadio', cat: 'Carburant', amount: 350000 },
+      { id: 3, chantier: 'brt', date: day(-4), title: 'Achat Extérieur Raccords PEHD Ø110', source: 'Fournisseur Extérieur Comptoir', cat: 'Matériaux', amount: 480000 },
+      { id: 4, chantier: 'diamniadio', date: day(-5), title: 'Fer à béton 20 tonnes', source: 'Quincaillerie Maison Diamniadio', cat: 'Matériaux', amount: 9600000 },
+      { id: 5, chantier: 'diamniadio', date: day(-7), title: 'Paie équipe coffrage', source: 'Main d’œuvre', cat: 'Main d’œuvre', amount: 4200000 },
+      { id: 6, chantier: 'thies', date: day(-3), title: 'Gazole engins de terrassement', source: 'Station Total Thiès', cat: 'Carburant', amount: 1250000 }
+    ],
+    fleet: [
+      { id: 1, name: 'Shacman X3000', plate: 'DK-8891-BG', status: 'En Mission', driver: 'Modou Diop', type: 'tracteur',
+        carb: [{ d: day(-2), l: 180, amount: 144000, km: null, station: 'Shell Diamniadio' }, { d: day(-9), l: 200, amount: 160000, km: null, station: 'Shell Diamniadio' }],
+        trips: [
+          { d: day(-2), voyages: 6, km: 540, depart: 'Carrière Bargny', arrivee: 'Chantier Tour Diamniadio', obs: 'Sable de dune 0/4' },
+          { d: day(-9), voyages: 7, km: 610, depart: 'Port Autonome de Dakar', arrivee: 'Chantier BRT Dakar', obs: 'Fer à béton Ø12' }
+        ]
+      },
+      { id: 2, name: 'Mercedes Arocs Toupie', plate: 'DK-4102-BH', status: 'Disponible', driver: 'Ibrahima Sarr', type: 'toupie',
+        carb: [{ d: day(-4), l: 150, amount: 120000, km: null, station: 'Total Rufisque' }],
+        trips: [
+          { d: day(-4), voyages: 5, km: 380, depart: 'Centrale à béton Rufisque', arrivee: 'Chantier Lycée', obs: 'Béton prêt à l’emploi B25' }
+        ]
+      },
+      { id: 3, name: 'Volvo FMX Benne', plate: 'DK-1029-BF', status: 'En Panne', driver: 'Alioune Badara', type: 'benne',
+        carb: [{ d: day(-3), l: 220, amount: 176000, km: null, station: 'Total Thiès' }, { d: day(-8), l: 180, amount: 144000, km: null, station: 'Total Thiès' }],
+        trips: [
+          { d: day(-3), voyages: 8, km: 420, depart: 'Carrière Pout', arrivee: 'Chantier Autoroute Thiès', obs: 'Basalte concassé' },
+          { d: day(-8), voyages: 6, km: 350, depart: 'Carrière Sindia', arrivee: 'Chantier Tour Diamniadio', obs: 'Tout-venant compacté' }
+        ]
+      }
+    ],
+    batiments: [
+      { id: 'b1', chantier: 'brt', nom: 'Bâtiment A, R+2', niveaux: 3, niveauActuel: 2, ingenieur: 'Ing. Mamadou Gueye', resp: 'Chef Diallo', debut: day(-60), prevision: day(75), livraison: day(90), note: 'Coulage de la dalle du R+2 prévu dans deux semaines', ph: { terr: 100, gros: 80, dalle: 40, maco: 10, elec: 0, fin: 0, rec: 0 } },
+      { id: 'b2', chantier: 'diamniadio', nom: 'Tour principale, R+8', niveaux: 9, niveauActuel: 5, ingenieur: 'Ing. Awa Sarr', resp: 'Chef Fall', debut: day(-120), prevision: day(60), livraison: day(-10), note: 'Retard de livraison du fer : planning à revoir', ph: { terr: 100, gros: 95, dalle: 70, maco: 40, elec: 20, fin: 0, rec: 0 } },
+      { id: 'b3', chantier: 'lycee', nom: 'Bâtiment Classes, R+1', niveaux: 2, niveauActuel: 1, ingenieur: 'Ing. Awa Sarr', resp: 'Chef Sow', debut: day(-20), prevision: day(180), livraison: day(200), note: 'Pose des fondations terminée, élévation en cours', ph: { terr: 100, gros: 50, dalle: 0, maco: 0, elec: 0, fin: 0, rec: 0 } }
+    ]
+  };
+}
+/* ---------- PERSISTANCE ROBUSTE (IndexedDB + localStorage + Export de secours) ---------- */
+const DB_NAME = 'margeup_db', DB_STORE = 'appstate', DB_VERSION = 1;
+let _idb = null;
+
+function _openIDB() {
+  return new Promise((resolve) => {
+    if (!window.indexedDB) return resolve(null);
+    if (_idb) return resolve(_idb);
+    try {
+      const req = indexedDB.open(DB_NAME, DB_VERSION);
+      req.onupgradeneeded = e => { e.target.result.createObjectStore(DB_STORE); };
+      req.onsuccess = e => { _idb = e.target.result; resolve(_idb); };
+      req.onerror = () => resolve(null);
+    } catch (e) { resolve(null); }
+  });
+}
+
+function _idbGet(key) {
+  return new Promise(async resolve => {
+    try {
+      const db = await _openIDB();
+      if (!db) return resolve(null);
+      const tx = db.transaction(DB_STORE, 'readonly');
+      const req = tx.objectStore(DB_STORE).get(key);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => resolve(null);
+    } catch (e) { resolve(null); }
+  });
+}
+
+function _idbSet(key, val) {
+  return new Promise(async resolve => {
+    try {
+      const db = await _openIDB();
+      if (!db) return resolve(false);
+      const tx = db.transaction(DB_STORE, 'readwrite');
+      tx.objectStore(DB_STORE).put(val, key);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    } catch (e) { resolve(false); }
+  });
+}
+
+function _normalize(s) {
+  if (!s || !s.inventory) return null;
+  s.roles = s.roles || {};
+  s.team = s.team || [];
+  s.depots = (s.depots && s.depots.length) ? s.depots : [{ id: 'd1', nom: 'Quincaillerie principale' }];
+  s.inventory.forEach(i => { i.depot = i.depot || s.depots[0].id; if (i.priceGros == null) i.priceGros = i.price; });
+  s.sales = s.sales || [];
+  s.fleet = s.fleet || [];
+  s.fleet.forEach(f => {
+    (f.trips || []).forEach(t => {
+      t.depart = t.depart || '';
+      t.arrivee = t.arrivee || '';
+      t.obs = t.obs || '';
+    });
+  });
+  s.pannes = s.pannes || [];
+  s.expenses = s.expenses || [];
+  s.chantiers = s.chantiers || [];
+  s.batiments = s.batiments || [];
+  s.reviews = (s.reviews && s.reviews.length) ? s.reviews : defaultReviews();
+  s.seq = s.seq || s.sales.length;
+  return s;
+}
+
+function load() {
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (raw) {
+      const s = _normalize(JSON.parse(raw));
+      if (s) return s;
+    }
+  } catch (e) {}
+  return seed();
+}
+
+async function syncFromIndexedDB() {
+  try {
+    const saved = await _idbGet(KEY);
+    if (saved && _normalize(saved)) {
+      // Si IndexedDB contient plus de données ou si localStorage a été effacé
+      if (!localStorage.getItem(KEY) || (saved.sales && saved.sales.length > (S.sales || []).length)) {
+        Object.assign(S, saved);
+        try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {}
+        renderAll();
+        console.log('[MargeUp] Données restaurées avec succès depuis IndexedDB');
+      }
+    }
+  } catch (e) { console.warn(e); }
+}
+
+function save() {
+  try {
+    const json = JSON.stringify(S);
+    // 1. Sauvegarde instantanée localStorage
+    localStorage.setItem(KEY, json);
+    // 2. Sauvegarde résiliente IndexedDB (résiste aux nettoyages de cache simples)
+    _idbSet(KEY, JSON.parse(json)).catch(() => {});
+  } catch (e) {
+    toast('Enregistrement impossible sur cet appareil');
+  }
+}
+
+// Outils d'export / import de sauvegarde d'urgence
+function exportBackup() {
+  const data = JSON.stringify(S, null, 2);
+  const blob = new Blob([data], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'margeup-sauvegarde-' + day() + '.json';
+  a.click();
+  toast('Sauvegarde téléchargée sur votre appareil !');
+}
+
+function importBackup() {
+  const inp = document.createElement('input');
+  inp.type = 'file';
+  inp.accept = '.json';
+  inp.onchange = e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = evt => {
+      try {
+        const parsed = _normalize(JSON.parse(evt.target.result));
+        if (parsed) {
+          S = parsed;
+          save();
+          renderAll();
+          toast('Données restaurées avec succès !');
+        } else {
+          toast('Fichier de sauvegarde invalide.');
+        }
+      } catch (err) {
+        toast('Erreur de lecture du fichier.');
+      }
+    };
+    reader.readAsText(file);
+  };
+  inp.click();
+}
+let S = load(), selChantier = null, calc = null, payMe = 'w', c1 = null, c2 = null, curRole = 'ceo', pendingRole = null, curUser = null, selDepot = null;
+const scoped = (type, list) => (!curUser || curUser.scope.type !== type || curUser.scope.id === 'all') ? list : list.filter(x => String(x.id) === String(curUser.scope.id));
+const scopeChantiers = () => scoped('chantier', S.chantiers), scopeDepots = () => scoped('depot', S.depots), scopeFleet = () => scoped('truck', S.fleet);
+const scopeLabel = m => m.scope.type === 'chantier' ? 'Admin du chantier ' + ((S.chantiers.find(c => c.id === m.scope.id) || {}).nom || '?').replace('Chantier ', '') : m.scope.type === 'depot' ? 'Admin de ' + ((S.depots.find(d => d.id === m.scope.id) || {}).nom || '?') : m.scope.id === 'all' ? 'Admin de toute la flotte' : 'Admin du camion ' + ((S.fleet.find(f => String(f.id) === String(m.scope.id)) || {}).plate || '?');
+const scopedPannes = () => (curUser && curUser.scope.type === 'truck' && curUser.scope.id !== 'all') ? S.pannes.filter(p => { const f = S.fleet.find(x => String(x.id) === String(curUser.scope.id)); return f && (p.vehicle || '').includes(f.plate); }) : S.pannes;
+
+/* ---------- ESSAI GRATUIT ET ABONNEMENT ---------- */
+function access() {
+  if (S.sub && S.sub.until >= day() && !S.sub.susp) return 'sub';
+  if (S.sub && S.sub.susp) return 'susp';
+  if (S.trial && S.trial.end >= day()) return 'trial';
+  if (S.trial || S.sub) return 'expired';
+  return 'visitor';
+}
+const canUse = () => ['trial', 'sub', 'visitor'].includes(access());
+
+function renderBanner() {
+  const a = access(), b = $('statusBanner'); let h = '';
+  const btn = (S.co && curRole !== 'ceo') ? '' : '<button onclick="subscribeNow()" class="bg-yellow-400 hover:bg-yellow-300 text-slate-950 font-bold shadow-md px-3 py-1.5 rounded-lg text-xs">S’abonner</button>';
+  if (a === 'visitor') h = `<div class="bg-blue-500/10 border-b border-blue-500/30 text-blue-800"><div class="max-w-7xl mx-auto px-4 py-2 text-xs flex flex-wrap items-center justify-between gap-2"><span><i class="fa-solid fa-eye"></i> Mode visiteur : explorez toutes les fonctions avec des données d’exemple, sans inscription.</span><button onclick="openCompanyModal()" class="bg-yellow-400 hover:bg-yellow-300 text-slate-950 font-bold shadow-md px-3 py-1.5 rounded-lg text-xs">Créer mon espace : 15 jours gratuits</button></div></div>`;
+  if (a === 'trial') { const n = daysLeft(S.trial.end); h = `<div class="bg-emerald-500/10 border-b border-emerald-500/30 text-emerald-700"><div class="max-w-7xl mx-auto px-4 py-2 text-xs flex flex-wrap items-center justify-between gap-2"><span><i class="fa-solid fa-gift"></i> Essai gratuit : ${n === 0 ? 'dernier jour' : n + ' jour' + (n > 1 ? 's' : '') + ' restant' + (n > 1 ? 's' : '')}. Toutes les fonctions sont ouvertes.</span>${btn}</div></div>`; }
+  if (a === 'expired') h = `<div class="bg-rose-500/10 border-b border-rose-500/30 text-rose-700"><div class="max-w-7xl mx-auto px-4 py-2 text-xs flex flex-wrap items-center justify-between gap-2"><span><i class="fa-solid fa-lock"></i> Votre essai gratuit est terminé. Abonnez-vous pour rouvrir vos modules. Vos données sont conservées.</span>${btn}</div></div>`;
+  if (a === 'susp') h = `<div class="bg-rose-500/10 border-b border-rose-500/30 text-rose-700"><div class="max-w-7xl mx-auto px-4 py-2 text-xs"><i class="fa-solid fa-ban"></i> Abonnement suspendu. Contactez MargeUp.</div></div>`;
+  if (a === 'sub') h = `<div class="bg-slate-100 border-b border-slate-200 text-slate-600"><div class="max-w-7xl mx-auto px-4 py-2 text-xs"><i class="fa-solid fa-circle-check text-emerald-600"></i> Abonnement actif jusqu’au ${fr(S.sub.until)}${S.sub.status === 'verif' ? ' <span class="text-amber-600">· paiement en cours de vérification</span>' : ''}</div></div>`;
+  b.innerHTML = h;
+}
+
+function fillLock() {
+  const a = access();
+  $('lock-title').textContent = a === 'susp' ? 'Abonnement suspendu' : a === 'none' ? 'Créez votre espace pour commencer' : 'Votre essai gratuit est terminé';
+  $('lock-msg').textContent = a === 'none' ? 'Donnez le nom de votre entreprise pour démarrer vos 15 jours d’essai gratuit.' : 'Abonnez-vous pour rouvrir camions, quincaillerie, chantiers et tableau de bord. Toutes vos données sont conservées.';
+  $('lock-btn').onclick = a === 'none' ? () => openCompanyModal(true) : subscribeNow;
+  $('lock-btn').textContent = a === 'none' ? 'Démarrer mon essai gratuit' : 'S’abonner maintenant';
+}
+
+/* ---------- RESTRICTION DES FONCTIONNALITÉS SELON LE PLAN CHOISI ---------- */
+function applyPlanRestrictions() {
+  const plan = (S.sub && S.sub.plan) || (S.trial && S.trial.plan) || (S.co && S.co.plan) || 'all';
+  const tabMagasinier = $('tab-magasinier');
+  const tabTransport = $('tab-transport');
+
+  if (plan === 'b2c_retail' || plan === 'hybrid_b2b_b2c' || plan === 'quincaillerie') {
+    if (tabTransport) tabTransport.classList.add('hidden');
+    if (tabMagasinier && (curRole === 'ceo' || curRole === 'magasinier')) tabMagasinier.classList.remove('hidden');
+  } else if (plan === 'fleet' || plan === 'fleet_custom' || plan === 'transport') {
+    if (tabMagasinier) tabMagasinier.classList.add('hidden');
+    if (tabTransport && (curRole === 'ceo' || curRole === 'transport')) tabTransport.classList.remove('hidden');
+  } else {
+    // Pack tout-en-un / All
+    if (tabMagasinier && (curRole === 'ceo' || curRole === 'magasinier')) tabMagasinier.classList.remove('hidden');
+    if (tabTransport && (curRole === 'ceo' || curRole === 'transport')) tabTransport.classList.remove('hidden');
+  }
+}
+
+/* ---------- NAVIGATION ET RÔLES ---------- */
+function switchTab(tabId) {
+  if (tabId === 'tarifs' && S.co && curRole !== 'ceo') { toast('Les tarifs sont réservés au patron (rôle CEO).'); return; }
+  let view = tabId;
+  if (GATED.includes(tabId) && !canUse()) { view = 'locked'; fillLock(); }
+  
+  document.querySelectorAll('main > section').forEach(s => s.classList.add('hidden'));
+  const targetSection = $('view-' + view);
+  if (targetSection) targetSection.classList.remove('hidden');
+
+  // Mise à jour de l'en-tête selon qu'on est sur le site public ou dans l'ERP
+  if (tabId === 'accueil') {
+    updateHeaderMode(S.co ? 'erp' : 'landing');
+  } else {
+    updateHeaderMode('erp');
+  }
+
+  // Appliquer les restrictions de plan aux onglets visibles
+  applyPlanRestrictions();
+
+  // Style des boutons d'onglets ERP
+  document.querySelectorAll('.nav-tab').forEach(b => {
+    b.classList.remove('bg-yellow-400', 'text-slate-950', 'bg-orange-500', 'text-white');
+    b.classList.add('text-slate-400');
+  });
+  const ab = $('tab-' + tabId);
+  if (ab) {
+    ab.classList.add('bg-yellow-400', 'text-slate-950');
+    ab.classList.remove('text-slate-400');
+  }
+}
+function switchRoleAndTab(role) { goModule(role); }
+function goModule(role) { if (curRole === 'ceo' || curRole === role) switchTab(role); else requestRole(role, () => switchTab(role)); }
+function changeRole(role) {
+  document.querySelectorAll('.role-restricted').forEach(b => b.classList.toggle('hidden', !(role === 'ceo' || b.classList.contains('role-' + role))));
+  const employe = !!S.co && role !== 'ceo'; // les tarifs sont réservés au patron (les visiteurs les voient)
+  document.querySelectorAll('.ceo-only').forEach(b => b.classList.toggle('hidden', employe));
+  applyPlanRestrictions();
+  const cur = document.querySelector('main > section:not(.hidden)');
+  if (cur && (employe && cur.id === 'view-tarifs' || !['view-accueil', 'view-tarifs', 'view-partenaires'].includes(cur.id))) switchTab(role === 'ceo' || employe && cur.id === 'view-tarifs' ? 'accueil' : role);
+}
+function hashPw(s, salt) {
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57; const t = 'safebtp|' + salt + '|' + s;
+  for (let i = 0, ch; i < t.length; i++) { ch = t.charCodeAt(i); h1 = Math.imul(h1 ^ ch, 2654435761); h2 = Math.imul(h2 ^ ch, 1597334677); }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+}
+function enterRole(role) {
+  if (S.blocked) {
+    toast('⚠️ Accès bloqué : vous devez changer votre mot de passe.');
+    return;
+  }
+  if (!S.co || !S.co.id) {
+    toast('Accès refusé : aucune session active.');
+    handleLogout();
+    return;
+  }
+  curRole = role; try { sessionStorage.setItem('safebtp.role', role); } catch (e) {}
+  if (role === 'ceo') { curUser = null; try { sessionStorage.setItem('safebtp.user', ''); } catch (e) {} }
+  if ($('roleSelector')) $('roleSelector').value = role;
+  changeRole(role);
+  renderAll();
+}
+function requestRole(role, cb) {
+  const rs = $('roleSelector');
+  if (role === 'ceo' || role === curRole || !S.co) { enterRole(role); if (cb) cb(); return; } // le patron et les visiteurs n'ont pas de mot de passe
+  rs.value = curRole;
+  const M = S.team.filter(m => m.role === role);
+  if (!M.length && !S.roles[role]) return openModal('<h3 class="text-base font-bold text-slate-900">Aucun membre pour ce rôle</h3><p class="text-xs text-slate-600">Le patron doit d’abord ajouter un membre (nom, e-mail, téléphone) pour le rôle ' + ROLE_LABEL[role] + ' avec le bouton « Équipe ».</p><div class="flex justify-end"><button onclick="closeModal()" class="px-4 py-2 rounded-xl text-xs bg-slate-100 text-slate-600">Fermer</button></div>');
+  pendingRole = { role, cb };
+  openModal(formWrap('Connexion : ' + ROLE_LABEL[role], 'rolepw', `<input type="hidden" name="role" value="${role}">` + (M.length ? sel('Votre nom', 'member', M.map(m => [m.id, m.nom + ' · ' + scopeLabel(m)])) : '') + fld('Mot de passe', 'pw', 'password', 'required autocomplete="off"') + '<div id="pwErr" class="text-xs text-rose-600"></div>', 'Entrer'));
+}
+
+/* ---------- FENÊTRES (MODAL) ---------- */
+function openModal(html) { $('modalBox').innerHTML = html; $('modal').classList.remove('hidden'); }
+function closeModal() { $('modal').classList.add('hidden'); }
+const fld = (l, n, t = 'text', a = '') => `<label class="block text-xs font-semibold text-slate-500">${l}<input name="${n}" type="${t}" ${a} class="${INPUT} mt-1"></label>`;
+const sel = (l, n, o) => `<label class="block text-xs font-semibold text-slate-500">${l}<select name="${n}" class="${INPUT} mt-1">${o.map(x => `<option value="${esc(x[0])}">${esc(x[1])}</option>`).join('')}</select></label>`;
+const formWrap = (title, f, body, ok, cancel = true) => `<h3 class="text-base font-bold text-slate-900">${title}</h3><form data-f="${f}" class="space-y-3">${body}<div class="flex justify-end gap-2 pt-2">${cancel ? '<button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl text-xs bg-slate-100 text-slate-600">Annuler</button>' : ''}<button class="px-4 py-2 rounded-xl text-xs bg-yellow-400 text-slate-950 font-bold">${ok}</button></div></form>`;
+
+/* ---------- ENTREPRISE & VÉRIFICATION EMAIL ---------- */
+function generateVerificationCode() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+async function sendVerificationEmail(email) {
+  verificationCode = generateVerificationCode();
+  verificationExpiry = Date.now() + 15 * 60 * 1000; // Valide 15 minutes
+  if (typeof window !== 'undefined') window.verificationCode = verificationCode;
+
+  const sb = getSupabase();
+  if (sb && email && email.includes('@')) {
+    try {
+      await sb.auth.signInWithOtp({ email });
+      console.log('[MargeUp Auth] E-mail de vérification envoyé avec succès via Supabase à', email);
+    } catch (err) {
+      console.warn('[MargeUp Auth] Supabase OTP fallback:', err.message || err);
+    }
+  }
+  console.log(`[MargeUp Auth] Code de vérification généré pour ${email} : ${verificationCode}`);
+  return verificationCode;
+}
+
+function openCompanyModal(forceOpen, prefill) {
+  if (S.co && curRole !== 'ceo') return toast('Réservé au patron : repassez au rôle CEO.');
+  const c = prefill || S.co || {};
+
+  const verifiedBadge = (S.co && S.co.emailVerified) ? `
+    <div class="bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs px-3 py-2 rounded-xl flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <i class="fa-solid fa-circle-check text-emerald-600 text-sm"></i>
+        <span>E-mail vérifié : <b class="font-bold text-slate-900">${esc(S.co.email)}</b></span>
+      </div>
+      <span class="text-[10px] text-emerald-700 bg-emerald-100 font-bold px-2 py-0.5 rounded-full">Actif</span>
+    </div>` : '';
+
+  const subtitle = S.co
+    ? 'Modifiez les informations de votre entreprise. Une modification d’e-mail nécessite une confirmation par code de sécurité.'
+    : 'Créez votre espace : vos 15 jours d’essai gratuit démarrent dès validation de votre adresse e-mail par code de sécurité.';
+
+  const body = `
+    <img src="images/chantier.jpg" alt="" class="w-full h-28 object-cover rounded-xl">
+    ${verifiedBadge}
+    <p class="text-xs text-slate-600">${subtitle}</p>
+    ${fld('Nom de l’entreprise *', 'nom', 'text', `required value="${esc(c.nom || '')}" placeholder="Ex. Sénégal Pavage SARL"`)}
+    ${fld('Nom et prénom du patron (CEO) *', 'resp', 'text', `required value="${esc(c.resp || '')}" placeholder="Ex. Moussa Diop"`)}
+    <div class="grid grid-cols-2 gap-3">
+      ${fld('E-mail *', 'email', 'email', `required value="${esc(c.email || '')}" placeholder="contact@entreprise.sn"`)}
+      ${fld('Téléphone *', 'tel', 'tel', `required minlength="9" value="${esc(c.tel || '')}" placeholder="77 000 00 00"`)}
+    </div>
+    ${fld('Ville', 'ville', 'text', `value="${esc(c.ville || '')}" placeholder="Ex. Dakar, Thiès, Touba"`)}
+    ${S.co ? '<button type="button" onclick="openTeamModal()" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-900 text-xs font-bold py-2.5 rounded-xl border border-slate-300"><i class="fa-solid fa-users"></i> Gérer mon équipe et les admins</button>' : ''}
+  `;
+
+  openModal(formWrap(
+    S.co ? 'Mon entreprise' : 'Créer mon espace · Étape 1/2',
+    'co',
+    body,
+    S.co ? 'Enregistrer les modifications' : 'Continuer vers la vérification e-mail <i class="fa-solid fa-arrow-right ml-1"></i>'
+  ));
+}
+
+function openVerificationModal() {
+  if (!pendingCompanyData) return openCompanyModal();
+
+  const code = verificationCode || sendVerificationEmail(pendingCompanyData.email);
+
+  openModal(`
+    <div class="space-y-4">
+      <div class="text-center space-y-1.5">
+        <div class="w-14 h-14 bg-orange-500/10 text-orange-600 rounded-2xl flex items-center justify-center text-2xl mx-auto ring-8 ring-orange-500/5">
+          <i class="fa-solid fa-envelope-circle-check"></i>
+        </div>
+        <div class="inline-flex items-center gap-1.5 bg-orange-500/10 text-orange-700 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase">
+          Étape 2/2 · Sécurité
+        </div>
+        <h3 class="text-lg font-black text-slate-900">Vérification de votre e-mail</h3>
+        <p class="text-xs text-slate-600 max-w-sm mx-auto">
+          Un code de sécurité à 6 chiffres a été envoyé à l’adresse :<br>
+          <span class="font-bold text-slate-900 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200 inline-block mt-1">${esc(pendingCompanyData.email)}</span>
+        </p>
+      </div>
+
+      <!-- BANNIÈRE SIMULATION LOCALE / VISIBILITÉ DIRECTE -->
+      <div class="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl p-3.5 space-y-2 text-xs">
+        <div class="flex items-center justify-between">
+          <span class="font-bold text-blue-900 flex items-center gap-1.5">
+            <i class="fa-solid fa-flask-vial text-blue-600"></i> Mode Test Local & Aperçu
+          </span>
+          <span class="text-[10px] bg-blue-600 text-white font-bold px-2 py-0.5 rounded-full">Simulation active</span>
+        </div>
+        <div class="flex flex-wrap items-center justify-between gap-2 bg-white/90 p-2.5 rounded-xl border border-blue-100 shadow-xs">
+          <div>
+            <div class="text-[11px] text-slate-500 font-medium">Code généré pour test :</div>
+            <div id="simulatedCodeText" class="font-mono font-black text-xl text-blue-700 tracking-wider">${code}</div>
+          </div>
+          <button type="button" onclick="autoFillVerificationCode()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-3 py-2 rounded-xl transition flex items-center gap-1.5 shadow-sm cursor-pointer">
+            <i class="fa-solid fa-wand-magic-sparkles"></i> Remplir automatiquement
+          </button>
+        </div>
+        <p class="text-[11px] text-blue-800 leading-tight">
+          Ce code simule l'e-mail de confirmation reçu par le client pour tester le flux en local sans délai.
+        </p>
+      </div>
+
+      <form data-f="verifyEmail" class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 text-center mb-2">
+            Entrez les 6 chiffres du code :
+          </label>
+          <div class="flex justify-center">
+            <input type="text" id="emailCodeInput" name="code" required maxlength="6" pattern="[0-9]{6}" autocomplete="one-time-code" placeholder="------" class="text-center font-mono text-2xl tracking-[0.35em] font-black w-56 py-2.5 px-3 bg-white border-2 border-slate-300 rounded-xl focus:border-orange-500 focus:outline-none focus:ring-4 focus:ring-orange-500/10 text-slate-900 shadow-inner">
+          </div>
+          <div id="verifyCodeErr" class="text-xs text-rose-600 text-center font-semibold mt-2 min-h-[16px]"></div>
+        </div>
+
+        <div class="space-y-2 pt-1">
+          <button type="submit" class="w-full bg-yellow-400 hover:bg-yellow-300 text-slate-950 font-bold shadow-md py-3 rounded-xl text-xs flex items-center justify-center gap-2 shadow-md transition cursor-pointer">
+            <i class="fa-solid fa-circle-check"></i> Confirmer le code et activer mon espace
+          </button>
+          
+          <div class="flex justify-between items-center pt-2 text-xs border-t border-slate-200">
+            <button type="button" onclick="resendVerificationCode()" class="text-orange-600 hover:text-orange-700 font-bold flex items-center gap-1.5 cursor-pointer">
+              <i class="fa-solid fa-rotate-right"></i> Renvoyer un code
+            </button>
+            <button type="button" onclick="backToCompanyForm()" class="text-slate-600 hover:text-slate-900 flex items-center gap-1 cursor-pointer">
+              <i class="fa-solid fa-arrow-left"></i> Modifier les infos
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+  `);
+
+  setTimeout(() => {
+    const inp = $('emailCodeInput');
+    if (inp) inp.focus();
+  }, 100);
+}
+
+function autoFillVerificationCode() {
+  const inp = $('emailCodeInput');
+  if (inp && verificationCode) {
+    inp.value = verificationCode;
+    inp.focus();
+    if ($('verifyCodeErr')) $('verifyCodeErr').textContent = '';
+  }
+}
+
+function resendVerificationCode() {
+  if (!pendingCompanyData) return;
+  const newCode = sendVerificationEmail(pendingCompanyData.email);
+  const disp = $('simulatedCodeText');
+  if (disp) disp.textContent = newCode;
+  const inp = $('emailCodeInput');
+  if (inp) inp.value = '';
+  if ($('verifyCodeErr')) $('verifyCodeErr').textContent = '';
+  toast('Nouveau code envoyé à ' + pendingCompanyData.email + ' : ' + newCode);
+}
+
+function backToCompanyForm() {
+  openCompanyModal(false, pendingCompanyData);
+}
+
+/* ---------- CALCULATEUR DE TARIFS & PACKS ---------- */
+let billingCycle = 'monthly'; // 'monthly' ou 'annual'
+const PACK_PRICES = {
+  b2c: 39900,
+  hybrid: 69900,
+  truck: 9900
+};
+let quincQty = { b2c: 1, hybrid: 1 };
+let selectedTrucksCount = 1;
+
+function setBillingCycle(c) {
+  billingCycle = c;
+  const isAnn = c === 'annual';
+  const bm = $('btn-billing-monthly'), ba = $('btn-billing-annual');
+  if (bm && ba) {
+    bm.className = isAnn ? 'px-4 py-1.5 rounded-full text-xs font-bold transition text-slate-600 hover:text-slate-900 cursor-pointer' : 'px-4 py-1.5 rounded-full text-xs font-bold transition bg-yellow-400 text-slate-950 cursor-pointer';
+    ba.className = isAnn ? 'px-4 py-1.5 rounded-full text-xs font-bold transition bg-yellow-400 text-slate-950 cursor-pointer' : 'px-4 py-1.5 rounded-full text-xs font-bold transition text-slate-600 hover:text-slate-900 cursor-pointer';
+  }
+  updateAllPricingDisplay();
+}
+
+function updateQuincPricing(type) {
+  const inp = $('quinc-' + type + '-qty');
+  if (inp) {
+    quincQty[type] = Math.max(1, parseInt(inp.value) || 1);
+  }
+  updateAllPricingDisplay();
+}
+
+function updateTruckPricing(val) {
+  selectedTrucksCount = Math.max(1, parseInt(val) || 1);
+  updateAllPricingDisplay();
+}
+
+function updateAllPricingDisplay() {
+  const isAnn = billingCycle === 'annual';
+  // Facteur annuel : 10 mois payés pour 12 mois
+  const annFactor = 10 / 12;
+
+  // 1. Quincaillerie B2C
+  const qB2C = quincQty.b2c || 1;
+  const discB2C = qB2C >= 2 ? 0.10 : 0; // -10% dès 2 quincailleries
+  const unitB2C = (PACK_PRICES.b2c * (1 - discB2C)) * (isAnn ? annFactor : 1);
+  const totalB2CMonthly = unitB2C * qB2C;
+  if ($('price-b2c')) $('price-b2c').innerText = fm(totalB2CMonthly);
+  if ($('cycle-b2c')) $('cycle-b2c').innerText = isAnn ? '/mois (facturé à l’année)' : '/mois';
+  const noticeB2C = $('disc-notice-b2c');
+  if (noticeB2C) noticeB2C.classList.toggle('hidden', qB2C < 2);
+
+  // 2. Quincaillerie Hybride
+  const qHyb = quincQty.hybrid || 1;
+  const discHyb = qHyb >= 2 ? 0.10 : 0; // -10% dès 2 quincailleries
+  const unitHyb = (PACK_PRICES.hybrid * (1 - discHyb)) * (isAnn ? annFactor : 1);
+  const totalHybMonthly = unitHyb * qHyb;
+  if ($('price-hybrid')) $('price-hybrid').innerText = fm(totalHybMonthly);
+  if ($('cycle-hybrid')) $('cycle-hybrid').innerText = isAnn ? '/mois (facturé à l’année)' : '/mois';
+  const noticeHyb = $('disc-notice-hybrid');
+  if (noticeHyb) noticeHyb.classList.toggle('hidden', qHyb < 2);
+
+  // 3. Flotte Camions
+  const trkUnit = PACK_PRICES.truck * (isAnn ? annFactor : 1);
+  const trkTotal = trkUnit * selectedTrucksCount;
+  if ($('price-truck')) $('price-truck').innerText = fm(trkUnit);
+  if ($('cycle-truck')) $('cycle-truck').innerText = isAnn ? '/ camion / mois (annuel)' : '/ camion / mois';
+  if ($('truck-count-display')) $('truck-count-display').innerText = selectedTrucksCount + (selectedTrucksCount > 1 ? ' camions' : ' camion');
+  if ($('truck-total-display')) $('truck-total-display').innerText = fm(trkTotal) + ' FCFA' + (isAnn ? ' /mois' : '');
+}
+
+function updatePricingCalculator() {
+  updateAllPricingDisplay();
+}
+
+function chooseQuincPack(planCode, basePrice, planLabel) {
+  if (!S.co) {
+    openAuthPhase('signup', planCode);
+    toast('Démarrez votre essai gratuit de 15 jours sur l’offre ' + planLabel + ' !');
+    return;
+  }
+  const isAnn = billingCycle === 'annual';
+  const type = planCode === 'b2c_retail' ? 'b2c' : 'hybrid';
+  const qty = quincQty[type] || 1;
+  const disc = qty >= 2 ? 0.10 : 0; // Remise 10%
+  const monthlyGross = basePrice * qty;
+  const monthlyNet = Math.round(monthlyGross * (1 - disc));
+  const totalToPay = isAnn ? monthlyNet * 10 : monthlyNet;
+
+  calc = {
+    planCode,
+    planLabel: planLabel + ' (' + qty + ' dépôt' + (qty > 1 ? 's' : '') + ')',
+    qty,
+    discPercent: disc * 100,
+    isAnnual: isAnn,
+    total: totalToPay
+  };
+  payMe = 'w';
+
+  openModal(`<div class="border-b border-slate-200 pb-3">
+    <div class="inline-flex items-center space-x-1.5 bg-orange-500/10 text-orange-700 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase mb-1">
+      <i class="fa-solid fa-store text-orange-600"></i><span>Abonnement MargeUp</span>
+    </div>
+    <h3 class="text-lg font-black text-slate-900">Souscrire au ${esc(planLabel)}</h3>
+    <p class="text-xs text-slate-500">${qty} point(s) de vente · ${isAnn ? 'Facturation annuelle (-2 mois offerts : 10 mois payés pour 12)' : 'Facturation mensuelle sans engagement'}</p>
+  </div>
+  <div class="space-y-3 pt-3">
+    <div class="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-1.5 text-xs">
+      <div class="flex justify-between">
+        <span class="text-slate-600">Nombre de quincailleries :</span>
+        <b class="text-slate-900">${qty}</b>
+      </div>
+      ${disc > 0 ? `<div class="flex justify-between text-emerald-700 font-bold">
+        <span>Remise Réseau Multi-points (-10%) :</span>
+        <span>-${fm(monthlyGross * 0.10)} FCFA / mois</span>
+      </div>` : ''}
+      <div class="flex justify-between items-center text-sm font-black pt-1 border-t border-slate-200">
+        <span class="text-slate-800">Total net à régler :</span>
+        <span class="text-orange-600 text-lg">${fm(totalToPay)} FCFA ${isAnn ? '<span class="text-xs font-normal text-slate-500">pour 12 mois</span>' : '<span class="text-xs font-normal text-slate-500">/ mois</span>'}</span>
+      </div>
+    </div>
+
+    <p class="text-xs text-slate-700">Réglez votre abonnement par Wave ou Orange Money :</p>
+    <div class="grid grid-cols-2 gap-3">
+      <button type="button" onclick="payWith('w')" class="p-3.5 rounded-xl border-2 border-cyan-400 bg-cyan-400/10 text-slate-900 text-sm font-black flex items-center justify-center gap-2 cursor-pointer hover:bg-cyan-400/20">
+        <span class="w-2.5 h-2.5 rounded-full bg-cyan-400"></span> Wave
+      </button>
+      <button type="button" onclick="payWith('o')" class="p-3.5 rounded-xl border-2 border-orange-500 bg-orange-500/10 text-slate-900 text-sm font-black flex items-center justify-center gap-2 cursor-pointer hover:bg-orange-500/20">
+        <span class="w-2.5 h-2.5 rounded-full bg-orange-500"></span> Orange Money
+      </button>
+    </div>
+    <p class="text-[11px] text-slate-500 pt-1">Après le paiement, renseignez votre numéro et la référence reçue par SMS :</p>
+    <form data-f="pay" class="space-y-3">
+      ${fld('Numéro qui a payé', 'phone', 'tel', 'required placeholder="77 000 00 00"')}
+      ${fld('Référence de transaction (reçue par SMS)', 'ref', 'text', 'required minlength="6" placeholder="Ex. TX123456789"')}
+      <div class="flex justify-end gap-2 pt-2">
+        <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl text-xs bg-slate-100 text-slate-600 cursor-pointer">Annuler</button>
+        <button class="px-4 py-2 rounded-xl text-xs bg-yellow-400 hover:bg-yellow-300 text-slate-950 font-bold shadow-md cursor-pointer shadow-md shadow-orange-500/30">Activer mon abonnement</button>
+      </div>
+    </form>
+  </div>`);
+}
+
+function chooseTruckPack() {
+  if (!S.co) {
+    openAuthPhase('signup', 'fleet_custom');
+    toast('Démarrez votre essai gratuit de 15 jours sur l’offre Flotte (' + selectedTrucksCount + ' camion' + (selectedTrucksCount > 1 ? 's' : '') + ') !');
+    return;
+  }
+  const isAnn = billingCycle === 'annual';
+  const unit = PACK_PRICES.truck;
+  const monthlyTotal = unit * selectedTrucksCount;
+  const totalToPay = isAnn ? monthlyTotal * 10 : monthlyTotal; // -2 mois offerts si annuel
+
+  calc = {
+    planCode: 'fleet_custom',
+    planLabel: 'Flotte (' + selectedTrucksCount + ' camion' + (selectedTrucksCount > 1 ? 's' : '') + ')',
+    camions: selectedTrucksCount,
+    isAnnual: isAnn,
+    total: totalToPay
+  };
+  payMe = 'w';
+
+  openModal(`<div class="border-b border-slate-200 pb-3">
+    <div class="inline-flex items-center space-x-1.5 bg-amber-500/10 text-amber-700 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase mb-1">
+      <i class="fa-solid fa-truck text-amber-600"></i><span>Abonnement Flotte Camions</span>
+    </div>
+    <h3 class="text-lg font-black text-slate-900">Abonnement Parc : ${selectedTrucksCount} camion(s)</h3>
+    <p class="text-xs text-slate-500">${isAnn ? 'Facturation annuelle (-2 mois offerts : payez 10 mois pour 12)' : 'Facturation mensuelle sans engagement'}</p>
+  </div>
+  <div class="space-y-3 pt-3">
+    <div class="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-1 text-xs">
+      <div class="flex justify-between">
+        <span class="text-slate-600">Tarif unitaire :</span>
+        <b class="text-slate-900">${fm(unit)} FCFA / camion / mois</b>
+      </div>
+      <div class="flex justify-between">
+        <span class="text-slate-600">Véhicules couverts :</span>
+        <b class="text-slate-900">${selectedTrucksCount} camion(s)</b>
+      </div>
+      <div class="flex justify-between items-center text-sm font-black pt-1 border-t border-slate-200">
+        <span class="text-slate-800">Total net à régler :</span>
+        <span class="text-amber-700 text-lg">${fm(totalToPay)} FCFA ${isAnn ? '<span class="text-xs font-normal text-slate-500">pour 12 mois</span>' : '<span class="text-xs font-normal text-slate-500">/ mois</span>'}</span>
+      </div>
+    </div>
+
+    <p class="text-xs text-slate-700">Réglez votre abonnement par Wave ou Orange Money :</p>
+    <div class="grid grid-cols-2 gap-3">
+      <button type="button" onclick="payWith('w')" class="p-3.5 rounded-xl border-2 border-cyan-400 bg-cyan-400/10 text-slate-900 text-sm font-black flex items-center justify-center gap-2 cursor-pointer hover:bg-cyan-400/20">
+        <span class="w-2.5 h-2.5 rounded-full bg-cyan-400"></span> Wave
+      </button>
+      <button type="button" onclick="payWith('o')" class="p-3.5 rounded-xl border-2 border-orange-500 bg-orange-500/10 text-slate-900 text-sm font-black flex items-center justify-center gap-2 cursor-pointer hover:bg-orange-500/20">
+        <span class="w-2.5 h-2.5 rounded-full bg-orange-500"></span> Orange Money
+      </button>
+    </div>
+    <p class="text-[11px] text-slate-500 pt-1">Après le paiement, renseignez votre numéro et la référence reçue par SMS :</p>
+    <form data-f="pay" class="space-y-3">
+      ${fld('Numéro qui a payé', 'phone', 'tel', 'required placeholder="77 000 00 00"')}
+      ${fld('Référence de transaction (reçue par SMS)', 'ref', 'text', 'required minlength="6" placeholder="Ex. TX123456789"')}
+      <div class="flex justify-end gap-2 pt-2">
+        <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl text-xs bg-slate-100 text-slate-600 cursor-pointer">Annuler</button>
+        <button class="px-4 py-2 rounded-xl text-xs bg-slate-900 hover:bg-slate-800 text-white font-bold cursor-pointer">Activer mon parc flotte</button>
+      </div>
+    </form>
+  </div>`);
+}
+
+function subscribeNow() {
+  chooseQuincPack('hybrid_b2b_b2c', 69900, 'Complet Hybride B2B + B2C');
+}
+function payWith(m) { payMe = m; openPayApp(); }
+function copyNum() { try { navigator.clipboard.writeText(PAY.num); return true; } catch (e) { return false; } }
+function openPayApp() {
+  const l = payMe === 'w' ? PAY.wave : PAY.om, nom = payMe === 'w' ? 'Wave' : 'Orange Money';
+  if (l) return window.open(l.replace('{amount}', Math.round(calc.total)).replace('{num}', PAY.num.replace(/\D/g, '')), '_blank');
+  toast(copyNum() ? 'Le numéro du marchand est copié. Ouvrez ' + nom + ', choisissez Envoyer, collez-le et saisissez ' + fm(calc.total) + ' FCFA.' : 'Ouvrez ' + nom + ' puis contactez MargeUp pour finaliser le paiement.');
+}
+
+/* ---------- QUINCAILLERIE ---------- */
+function renderInventory() {
+  const D = scopeDepots();
+  if (!D.find(d => d.id === selDepot)) selDepot = D.length ? D[0].id : null;
+  $('depot-select').innerHTML = D.map(d => `<option value="${esc(d.id)}" ${d.id === selDepot ? 'selected' : ''}>${esc(d.nom)}</option>`).join('');
+  const q = ($('stock-search').value || '').toLowerCase(), tb = $('inventory-table-body');
+  const L = S.inventory.filter(i => i.depot === selDepot && (!q || (i.name + ' ' + i.cat).toLowerCase().includes(q)));
+  tb.innerHTML = L.length ? L.map(i => {
+    const isTonne = isCementOrTonne(i);
+    const formattedQty = formatMaterialQty(i);
+    let priceDisplay = '';
+    if (isTonne) {
+      priceDisplay = `<div><b class="text-slate-900">${fm(i.price)} FCFA</b> <span class="text-[11px] text-slate-500">/ sac</span></div>
+        <div class="text-[10px] text-slate-500 font-medium">Tonne (20 sacs) : ${fm(i.price * 20)} FCFA</div>
+        <div class="text-[10px] text-purple-700 font-medium">Gros : ${fm(i.priceGros || i.price)} FCFA/sac (${fm((i.priceGros || i.price) * 20)} F/t)</div>`;
+    } else {
+      priceDisplay = `<div><b class="text-slate-900">${fm(i.price)} FCFA</b></div><div class="text-[10px] text-slate-500">Gros : ${fm(i.priceGros || i.price)} FCFA</div>`;
+    }
+    return `<tr class="hover:bg-slate-50">
+      <td class="p-4">
+        <div class="font-bold text-slate-900">${esc(i.name)}</div>
+        ${isTonne ? '<span class="inline-flex items-center gap-1 text-[10px] bg-amber-50 text-amber-800 font-bold px-2 py-0.5 rounded-full border border-amber-200 mt-0.5"><i class="fa-solid fa-scale-balanced text-[9px]"></i> 1 tonne = 20 sacs</span>' : ''}
+      </td>
+      <td class="p-4"><span class="bg-purple-500/10 text-purple-700 px-2 py-0.5 rounded border border-purple-500/20 text-[11px]">${esc(i.cat)}</span></td>
+      <td class="p-4 font-bold ${i.qty <= (i.seuil || 0) ? 'text-amber-700' : 'text-emerald-700'}">
+        <div class="text-sm font-black">${formattedQty}</div>
+      </td>
+      <td class="p-4">${priceDisplay}</td>
+      <td class="p-4 text-slate-600">${esc(i.lastChantier || '—')}</td>
+      <td class="p-4 text-right">
+        <button onclick="openDispatchModal(${i.id})" class="bg-purple-600 hover:bg-purple-500 text-white text-[11px] font-bold px-3 py-1.5 rounded-lg shadow-sm">
+          Expédier vers Chantier
+        </button>
+      </td>
+    </tr>`;
+  }).join('')
+    : '<tr><td colspan="6" class="p-6 text-center text-slate-500">Aucun article. Cliquez sur « Entrée en Stock / Nouvel Article ».</td></tr>';
+  renderSales();
+}
+function setDepot(id) { selDepot = id; renderInventory(); }
+function openDepotModal() {
+  if (access() === 'sub' && S.depots.length >= S.sub.quinc) return toast('Votre abonnement couvre ' + S.sub.quinc + ' quincaillerie(s). Augmentez-le pour en ajouter.');
+  openModal(formWrap('Nouvelle quincaillerie', 'depot', fld('Nom de la quincaillerie ou du dépôt', 'nom', 'text', 'required placeholder="Quincaillerie Rufisque"'), 'Créer'));
+}
+function openStockModal() {
+  openModal(formWrap('Entrée en stock / Nouvel arrivage', 'stock',
+    fld('Nom de l’article *', 'name', 'text', 'required placeholder="Ex. Ciment Dangote CPJ 42.5"') +
+    '<div class="grid grid-cols-2 gap-3">' +
+      fld('Catégorie', 'cat', 'text', 'placeholder="Ex. Cimenterie, Plomberie..."') +
+      sel('Unité de référence', 'unit', [
+        ['tonne', 'Tonnes (1 t = 20 sacs)'],
+        ['sacs', 'Sacs de 50 kg'],
+        ['mètres', 'Mètres (m)'],
+        ['camions', 'Camions'],
+        ['unités', 'Unités / Pièces']
+      ]) +
+    '</div>' +
+    '<div class="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 text-xs text-amber-900 space-y-1">' +
+      '<div class="font-bold flex items-center gap-1.5"><i class="fa-solid fa-scale-balanced text-amber-600"></i> Règle de conversion MargeUp : 1 tonne = 20 sacs (50 kg)</div>' +
+      '<div>Pour le ciment, vous pouvez saisir en tonnes ou en sacs. L\'addition s\'effectuera toujours de façon exacte sans mélange erroné.</div>' +
+    '</div>' +
+    '<div class="grid grid-cols-2 gap-3">' +
+      fld('Quantité reçue *', 'qty', 'number', 'required min="0.01" step="any" placeholder="Ex. 24 ou 500"') +
+      sel('Unité saisie pour cet arrivage *', 'input_unit', [
+        ['tonne', 'Tonnes (1 t = 20 sacs)'],
+        ['sacs', 'Sacs de 50 kg (20 sacs = 1 t)'],
+        ['unités', 'Même unité que l\'article']
+      ]) +
+    '</div>' +
+    '<div class="grid grid-cols-2 gap-3">' +
+      fld('Prix détail (FCFA / unité ou sac)', 'price', 'number', 'min="0" placeholder="Ex. 4250"') +
+      fld('Prix gros (FCFA / unité ou sac)', 'priceGros', 'number', 'min="0" placeholder="Ex. 3800"') +
+    '</div>' +
+    '<p class="text-[11px] text-slate-500">Pour le ciment : 1 sac = 4 250 F (soit 1 tonne = 20 sacs = 85 000 F).</p>',
+    'Enregistrer'));
+}
+function openDispatchModal(id) {
+  const i = S.inventory.find(x => x.id == id); if (!i) return;
+  if (!S.chantiers.length) return toast('Créez d’abord un chantier');
+  const isTonne = isCementOrTonne(i);
+  openModal(formWrap('Expédier vers Chantier : ' + esc(i.name), 'dispatch',
+    `<input type="hidden" name="id" value="${i.id}">
+     <div class="bg-purple-50 border border-purple-200 rounded-xl p-3 text-xs space-y-1">
+       <div>Stock disponible actuel : <b class="text-purple-900">${formatMaterialQty(i)}</b></div>
+       ${isTonne ? '<div class="text-[11px] text-purple-700 font-medium">Conversion automatique : 1 tonne = 20 sacs (50 kg)</div>' : ''}
+     </div>` +
+    sel('Chantier de destination', 'chantier', S.chantiers.map(c => [c.id, c.nom])) +
+    (isTonne ? `
+      <div class="grid grid-cols-2 gap-3">
+        ${fld('Quantité à expédier', 'qty', 'number', 'required min="0.01" step="any" placeholder="Ex. 10"')}
+        ${sel('Unité de sortie', 'dispatch_unit', [
+          ['sacs', 'Sacs de 50 kg'],
+          ['tonnes', 'Tonnes complètes']
+        ])}
+      </div>` : fld('Quantité à sortir (' + esc(i.unit) + ')', 'qty', 'number', `required min="0.01" max="${i.qty}" step="any"`)) +
+    '<div id="dispErr" class="text-xs text-rose-600"></div>', 'Valider la sortie'));
+}
+
+/* ---------- FLOTTE ET PANNES ---------- */
+function renderPannes() {
+  const m = day().slice(0, 7), n = scopedPannes().filter(p => (p.date || '').startsWith(m)).length;
+  $('pannes-count').textContent = n + ' panne' + (n > 1 ? 's' : '') + ' ce mois';
+  $('pannes-table-body').innerHTML = scopedPannes().length ? scopedPannes().map(p => {
+    let b = 'bg-amber-500/20 text-amber-600 border-amber-500/30'; if (p.severity === 'Critique') b = 'bg-rose-500/20 text-rose-600 border-rose-500/30'; if (p.severity === 'Faible') b = 'bg-slate-100 text-slate-600 border-slate-300';
+    return `<tr class="hover:bg-slate-50"><td class="p-3 font-bold text-slate-900">${esc(p.vehicle)}</td><td class="p-3 text-slate-500">${esc(p.driver)}</td><td class="p-3 text-slate-600">${esc(p.diag)}</td><td class="p-3"><span class="px-2 py-0.5 rounded border text-[10px] font-bold ${b}">${esc(p.severity)}</span></td><td class="p-3 font-semibold text-amber-600">${esc(p.status)}</td><td class="p-3 font-bold text-slate-900">${fm(p.cost)} FCFA</td></tr>`;
+  }).join('') : '<tr><td colspan="6" class="p-6 text-center text-slate-500">Aucune panne enregistrée.</td></tr>';
+}
+function carbStats0(f) { const m = day().slice(0, 7), c = f.carb || [], M = c.filter(x => (x.d || '').startsWith(m)); return { l: M.reduce((s, x) => s + x.l, 0), a: M.reduce((s, x) => s + (x.amount || 0), 0), last: c[0] }; }
+function carbStats(f) {
+  const m = day().slice(0, 7), c = f.carb || [], M = c.filter(x => (x.d || '').startsWith(m)), T = (f.trips || []).filter(x => (x.d || '').startsWith(m));
+  return { l: M.reduce((s, x) => s + x.l, 0), a: M.reduce((s, x) => s + (x.amount || 0), 0), last: c[0], km: T.reduce((s, x) => s + (x.km || 0), 0), v: T.reduce((s, x) => s + (x.voyages || 0), 0), lastTrip: (f.trips || [])[0] };
+}
+function renderFleet() {
+  $('fleet-cards-container').innerHTML = scopeFleet().length ? scopeFleet().map(f => `
+    <div class="bg-slate-50 border border-slate-200 p-4 rounded-xl space-y-3">
+      <img src="${TYPE_IMG[f.type] || TYPE_IMG.benne}" alt="${esc(f.name)}" loading="lazy" class="w-full h-28 object-cover rounded-lg">
+      <div class="flex justify-between items-start gap-2"><div><div class="font-bold text-slate-900 text-sm">${esc(f.name)}</div><div class="text-[11px] text-slate-500">${esc(f.plate)} • Chauffeur: ${esc(f.driver)}</div></div>
+      <span class="text-[10px] bg-slate-100 border border-slate-300 ${f.status === 'En Panne' ? 'text-rose-600' : 'text-amber-600'} px-2 py-0.5 rounded-full font-bold">${esc(f.status)}</span></div>
+      ${(() => {
+        const s = carbStats(f);
+        return `<div class="bg-slate-100 rounded-lg p-2.5 text-[11px] text-slate-700 space-y-1.5">
+          <div class="flex justify-between gap-2"><span class="text-slate-600">Carburant ce mois</span><b class="text-amber-700">${fm(s.l)} L · ${fm(s.a)} FCFA</b></div>
+          <div class="flex justify-between gap-2"><span class="text-slate-600">Voyages · distance</span><b class="text-slate-900">${s.v} tour${s.v > 1 ? 's' : ''} · ${fm(s.km)} km</b></div>
+          ${s.last ? `<div class="text-slate-600">Dernier plein : ${fr(s.last.d)}, ${fm(s.last.l)} L</div>` : '<div class="text-slate-500">Aucun plein enregistré</div>'}
+          ${s.lastTrip ? `
+            <div class="pt-1.5 border-t border-slate-200 text-slate-700">
+              <span class="text-[10px] text-amber-800 font-bold uppercase block">Dernier trajet (${s.lastTrip.voyages || 1} tour${(s.lastTrip.voyages || 1) > 1 ? 's' : ''}) :</span>
+              <div class="font-semibold text-slate-900 flex items-center gap-1.5 truncate mt-0.5" title="${esc(s.lastTrip.depart || '—')} ➔ ${esc(s.lastTrip.arrivee || '—')}">
+                <i class="fa-solid fa-location-dot text-amber-600 text-[10px]"></i>
+                <span class="truncate">${esc(s.lastTrip.depart || 'Départ non précisé')}</span>
+                <i class="fa-solid fa-arrow-right text-[9px] text-slate-400 shrink-0"></i>
+                <span class="truncate">${esc(s.lastTrip.arrivee || 'Arrivée non précisée')}</span>
+              </div>
+            </div>` : ''}
+        </div>`;
+      })()}
+      <div class="flex flex-wrap gap-2">
+        <button onclick="openFuelModal(${f.id})" class="flex-1 bg-amber-600 hover:bg-amber-500 text-white text-[11px] font-bold py-1.5 rounded-lg">Plein carburant</button>
+        <button onclick="openTripModal(${f.id})" class="flex-1 bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold py-1.5 rounded-lg flex items-center justify-center gap-1">
+          <i class="fa-solid fa-route text-[10px] text-amber-400"></i> Tours & Lieux
+        </button>
+        <button onclick="openTruckTripsModal(${f.id})" class="px-2.5 py-1.5 text-[11px] bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold rounded-lg" title="Historique complet des tours de ce camion">
+          <i class="fa-solid fa-list-check"></i>
+        </button>
+        <button onclick="delTruck(${f.id})" class="px-2 text-[11px] bg-slate-100 hover:bg-rose-100 hover:text-rose-600 text-slate-500 rounded-lg" title="Retirer de la flotte">
+          <i class="fa-solid fa-trash-can"></i>
+        </button>
+      </div>
+    </div>`).join('') : '<div class="md:col-span-3 text-center text-slate-500 text-xs p-6">Aucun camion. Cliquez sur « Ajouter un camion ».</div>';
+}
+function openTruckModal() {
+  if (access() === 'sub' && S.fleet.length >= S.sub.trucks) return toast('Votre abonnement couvre ' + S.sub.trucks + ' camion(s). Augmentez-le pour en ajouter.');
+  openModal(formWrap('Nouveau camion', 'truck',
+    '<div class="grid grid-cols-2 gap-3">' + sel('Type de véhicule', 'type', [['tracteur', 'Tracteur / camion routier'], ['toupie', 'Toupie à béton'], ['benne', 'Camion benne / engin']]) + fld('Modèle', 'name', 'text', 'required placeholder="Shacman X3000"') + fld('Immatriculation', 'plate', 'text', 'required placeholder="DK-0000-AA"') + fld('Chauffeur', 'driver', 'text', 'required') + '</div>', 'Enregistrer'));
+}
+function delTruck(id) { if (!confirm('Retirer ce camion de la flotte ?')) return; S.fleet = S.fleet.filter(f => f.id != id); save(); renderAll(); }
+function openFuelModal(id) {
+  const f = S.fleet.find(x => x.id == id); if (!f) return;
+  openModal(formWrap('Plein de carburant : ' + esc(f.name), 'fuel', `<input type="hidden" name="id" value="${f.id}">` +
+    '<div class="grid grid-cols-2 gap-3">' + fld('Litres mis', 'l', 'number', 'required min="0" step="any"') + fld('Montant payé (FCFA)', 'amount', 'number', 'min="0"') + fld('Compteur kilométrique (facultatif)', 'km', 'number', 'min="0"') + fld('Station (facultatif)', 'station') + '</div>' +
+    (S.chantiers.length ? sel('Ajouter aux dépenses du chantier (facultatif)', 'chantier', [['', 'Ne pas imputer']].concat(S.chantiers.map(c => [c.id, c.nom]))) : ''), 'Enregistrer le plein'));
+}
+function openTripModal(id) {
+  const f = S.fleet.find(x => x.id == id); if (!f) return;
+  const departSuggestions = ['Carrière Bargny', 'Carrière Sindia', 'Carrière Pout', 'Port Autonome de Dakar', 'Centrale à béton Rufisque', 'Dépôt principal'].concat(S.chantiers.map(c => c.nom.replace(/^Chantier\s*/i, '')));
+  const arriveeSuggestions = S.chantiers.map(c => c.nom).concat(['Dakar Plateau', 'Diamniadio Ville Nouvelle', 'Thiès', 'Mbour', 'Lac Rose', 'Rufisque']);
+
+  const departOpts = Array.from(new Set(departSuggestions)).map(s => `<option value="${esc(s)}"></option>`).join('');
+  const arriveeOpts = Array.from(new Set(arriveeSuggestions)).map(s => `<option value="${esc(s)}"></option>`).join('');
+
+  openModal(formWrap('Saisir voyages & lieux : ' + esc(f.name), 'trip',
+    `<input type="hidden" name="id" value="${f.id}">
+     <div class="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 text-xs text-amber-900 flex justify-between items-center">
+       <div>Véhicule : <b>${esc(f.name)}</b> (${esc(f.plate)})</div>
+       <div>Chauffeur : <b>${esc(f.driver)}</b></div>
+     </div>
+     <div class="grid grid-cols-2 gap-3">
+       ${fld('Date *', 'd', 'date', `required value="${day()}"`)}
+       ${fld('Nombre de voyages (tours) *', 'voyages', 'number', 'required min="1" value="1"')}
+     </div>
+     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+       <label class="block text-xs font-semibold text-slate-500">
+         Lieu de départ (chargement) *
+         <input name="depart" list="list-depart" required placeholder="Ex. Carrière Bargny, Port Dakar..." class="${INPUT} mt-1">
+         <datalist id="list-depart">${departOpts}</datalist>
+       </label>
+       <label class="block text-xs font-semibold text-slate-500">
+         Lieu d'arrivée (destination / chantier) *
+         <input name="arrivee" list="list-arrivee" required placeholder="Ex. Chantier Tour Diamniadio, Dakar..." class="${INPUT} mt-1">
+         <datalist id="list-arrivee">${arriveeOpts}</datalist>
+       </label>
+     </div>
+     <div class="grid grid-cols-2 gap-3">
+       ${fld('Distance totale (km)', 'km', 'number', 'min="0" step="any" placeholder="Ex. 140"')}
+       ${fld('Marchandise / Observations (facultatif)', 'obs', 'text', 'placeholder="Ex. Sable 0/4, Fer Ø12, Béton B25..."')}
+     </div>`,
+    'Enregistrer le voyage'));
+}
+function driverStats(period) {
+  const m = day().slice(0, 7), inP = d => period === 'all' || (d || '').startsWith(m), map = {};
+  scopeFleet().forEach(f => {
+    const k = (f.driver || '—').trim(), s = map[k] = map[k] || { name: k, trucks: [], l: 0, a: 0, km: 0, v: 0, pannes: 0 };
+    s.trucks.push(f.name);
+    (f.carb || []).filter(x => inP(x.d)).forEach(x => { s.l += x.l; s.a += x.amount || 0; });
+    (f.trips || []).filter(x => inP(x.d)).forEach(x => { s.km += x.km || 0; s.v += x.voyages || 0; });
+  });
+  S.pannes.forEach(p => { const s = map[(p.driver || '').trim()]; if (s && inP(p.date)) s.pannes++; });
+  return Object.values(map).map(s => Object.assign(s, { l100: s.km > 0 ? s.l / s.km * 100 : null, lv: s.v > 0 ? s.l / s.v : null, has: s.l > 0 || s.km > 0 || s.v > 0 }));
+}
+function renderDrivers() {
+  const per = $('rank-period').value || 'month', mode = $('rank-sort').value || 'score', D = driverStats(per);
+  const wk = D.filter(x => x.l100 !== null), avg = wk.length ? wk.reduce((s, x) => s + x.l100, 0) / wk.length : null;
+  D.forEach(x => { x.score = Math.max(0, Math.round(100 - 10 * x.pannes - (x.l100 !== null && avg ? Math.max(0, (x.l100 / avg - 1) * 100) : 0))); });
+  const big = 1e9, key = { score: x => -x.score, l100: x => x.l100 === null ? big : x.l100, lv: x => x.lv === null ? big : x.lv }[mode];
+  D.sort((x, y) => (y.has - x.has) || (key(x) - key(y)) || ((x.l100 === null ? big : x.l100) - (y.l100 === null ? big : y.l100)));
+  const f1 = v => v === null ? '—' : v.toFixed(1).replace('.', ','), best = D.find(x => x.has && (mode === 'score' || key(x) < big));
+  $('driver-best').innerHTML = best ? `<div class="bg-amber-500/10 border border-amber-500/40 rounded-xl p-4 flex flex-wrap items-center gap-3"><i class="fa-solid fa-trophy text-amber-600 text-2xl"></i><div class="flex-1 min-w-0"><div class="text-xs text-amber-800 font-semibold">Meilleur chauffeur à primer</div><div class="text-lg font-black text-slate-900">${esc(best.name)}</div><div class="text-[11px] text-slate-700">${fm(best.l)} L pour ${fm(best.km)} km et ${best.v} voyage(s) · ${f1(best.l100)} L/100 km · ${f1(best.lv)} L/voyage · ${best.pannes} panne(s)</div></div><div class="text-2xl font-black text-amber-700">${best.score}<span class="text-xs font-normal text-slate-600">/100</span></div></div>` : '<div class="text-xs text-slate-600">Saisissez des pleins et des voyages pour désigner le meilleur chauffeur.</div>';
+  $('driver-table-body').innerHTML = D.length ? D.map((x, i) => `<tr class="hover:bg-slate-50 ${best && x === best ? 'bg-amber-500/5' : ''}"><td class="p-3 font-black text-slate-700">${x.has ? i + 1 : '—'}</td><td class="p-3"><div class="font-bold text-slate-900">${esc(x.name)}</div><div class="text-[10px] text-slate-600">${esc(x.trucks.join(', '))}</div></td><td class="p-3 text-slate-700">${fm(x.l)} L<div class="text-[10px] text-slate-600">${fm(x.a)} FCFA</div></td><td class="p-3 text-slate-700">${fm(x.km)} km</td><td class="p-3 text-slate-700">${x.v}</td><td class="p-3 font-bold text-slate-900">${f1(x.l100)}</td><td class="p-3 font-bold text-slate-900">${f1(x.lv)}</td><td class="p-3 ${x.pannes ? 'text-rose-700' : 'text-slate-700'}">${x.pannes}</td><td class="p-3 font-black ${x.score >= 80 ? 'text-emerald-700' : x.score >= 60 ? 'text-amber-700' : 'text-rose-700'}">${x.score}</td><td class="p-3">${best && x === best ? '<span class="text-[10px] bg-amber-500 text-slate-950 px-2 py-0.5 rounded-full font-bold">À primer</span>' : ''}</td></tr>`).join('') : '<tr><td colspan="10" class="p-6 text-center text-slate-600">Aucun chauffeur. Ajoutez un camion avec son chauffeur.</td></tr>';
+}
+function openPanneModal() {
+  if (!S.fleet.length) return toast('Ajoutez d’abord un camion');
+  openModal(formWrap('Signaler une panne', 'panne', sel('Camion', 'fid', scopeFleet().map(f => [f.id, f.name + ' (' + f.plate + ')'])) + fld('Diagnostic / motif', 'diag', 'text', 'required') +
+    '<div class="grid grid-cols-2 gap-3">' + sel('Gravité', 'sev', [['Faible', 'Faible'], ['Moyenne', 'Moyenne'], ['Critique', 'Critique']]) + sel('Statut', 'st', [['En Réparation', 'En réparation'], ['En Attente Pièce', 'En attente de pièce'], ['Terminé', 'Terminé']]) + '</div>' + fld('Coût estimé (FCFA)', 'cost', 'number', 'min="0" value="0"'), 'Enregistrer la panne'));
+}
+
+/* ---------- CHANTIERS, DÉPENSES, BÂTIMENTS ---------- */
+const spent = cid => S.expenses.filter(e => e.chantier === cid).reduce((s, e) => s + e.amount, 0);
+const batPct = b => Math.round(PHASES.reduce((s, p) => s + (b.ph[p[0]] || 0), 0) / PHASES.length);
+function batTime(b) {
+  const p = batPct(b);
+  let leftTxt = 'Date non renseignée', leftBad = false;
+  if (b.prevision) { const l = daysLeft(b.prevision); leftBad = l < 0 && p < 100; leftTxt = p >= 100 ? 'Terminé' : l < 0 ? Math.abs(l) + ' jour(s) de retard' : l === 0 ? 'Dernier jour' : l + ' jour(s) restant(s)'; }
+  let proj = null, projTxt = 'Pas assez de données', warn = false;
+  if (p >= 100) projTxt = 'Terminé';
+  else if (b.debut && p > 0) {
+    const el = -daysLeft(b.debut);
+    if (el > 0) { proj = addDays(b.debut, Math.round(el / (p / 100))); const ec = b.prevision ? Math.round((new Date(proj + 'T12:00') - new Date(b.prevision + 'T12:00')) / 864e5) : 0; warn = ec > 0; projTxt = !b.prevision ? 'Sans prévision à comparer' : ec > 0 ? '≈ ' + ec + ' jour(s) après la prévision' : 'Dans les temps'; }
+  }
+  const late = p < 100 && (b.prevision ? daysLeft(b.prevision) < 0 : !!(b.livraison && b.livraison < day()));
+  return { leftTxt, leftBad, proj, projTxt, warn, late };
+}
+function renderChantiers() {
+  if (!$('batiments-grid') || !$('expenses-table-body') || !$('budget-box')) return; // section Chantiers retirée de la page
+  const sl = $('selectedChantierFilter');
+  if (!scopeChantiers().length) { if (sl) sl.innerHTML = '<option>Aucun chantier</option>'; selChantier = null; } else {
+    if (!scopeChantiers().find(c => c.id === selChantier)) selChantier = scopeChantiers()[0].id;
+    if (sl) sl.innerHTML = scopeChantiers().map(c => `<option value="${esc(c.id)}" ${c.id === selChantier ? 'selected' : ''}>${esc(c.nom)}</option>`).join('');
+  }
+  const c = S.chantiers.find(x => x.id === selChantier);
+  const L = S.expenses.filter(e => e.chantier === selChantier);
+  $('expenses-table-body').innerHTML = L.length ? L.map(e => `<tr class="hover:bg-slate-50"><td class="p-3 text-slate-500">${fr(e.date)}</td><td class="p-3 font-bold text-slate-900">${esc(e.title)}<div class="text-[10px] text-slate-500">${esc(e.cat || '')}</div></td><td class="p-3"><span class="text-[11px] text-purple-600 bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/20">${esc(e.source)}</span></td><td class="p-3 font-bold text-orange-600">${fm(e.amount)} FCFA</td><td class="p-3"><button onclick="delExpense(${e.id})" class="text-[10px] text-slate-500 hover:text-rose-600">Supprimer</button></td></tr>`).join('') : '<tr><td colspan="5" class="p-6 text-center text-slate-500">Aucune dépense pour ce chantier.</td></tr>';
+  const sp = c ? spent(c.id) : 0, bud = c ? c.budget : 0, pc = bud ? Math.min(100, Math.round(sp / bud * 100)) : 0;
+  $('budget-box').innerHTML = c ? `<div class="flex justify-between font-bold"><span class="text-slate-500">Budget alloué:</span><span class="text-slate-900">${fm(bud)} FCFA</span></div><div class="flex justify-between font-bold"><span class="text-slate-500">Total dépensé:</span><span class="text-orange-600">${fm(sp)} FCFA</span></div><div class="flex justify-between font-bold"><span class="text-slate-500">Reste:</span><span class="${bud - sp < 0 ? 'text-rose-600' : 'text-emerald-600'}">${fm(bud - sp)} FCFA</span></div><div class="w-full bg-slate-100 rounded-full h-2"><div class="${pc >= 90 ? 'bg-rose-500' : 'bg-orange-500'} h-2 rounded-full" style="width:${pc}%"></div></div><span class="text-[10px] text-slate-500">${pc}% du budget consommé</span>` : '<span class="text-slate-500">Créez un chantier pour suivre son budget.</span>';
+  if (S.co && curRole !== 'ceo') $('budget-box').innerHTML = '<div class="text-slate-600">Le budget et les marges sont visibles uniquement par la direction.</div>';
+  const B = S.batiments.filter(b => b.chantier === selChantier);
+  $('batiments-grid').innerHTML = B.length ? B.map(b => {
+    const p = batPct(b), t = batTime(b);
+    const badge = p >= 100 ? '<span class="text-[10px] bg-emerald-500/20 text-emerald-700 border border-emerald-500/30 px-2 py-0.5 rounded-full font-bold">Terminé</span>' : t.late ? '<span class="text-[10px] bg-rose-500/20 text-rose-700 border border-rose-500/30 px-2 py-0.5 rounded-full font-bold whitespace-nowrap">En retard</span>' : '';
+    return `<div class="bg-slate-50 border ${t.late ? 'border-rose-500/40' : 'border-slate-200'} rounded-xl overflow-hidden"><img src="images/immeubles.jpg" alt="" loading="lazy" class="w-full h-20 object-cover"><div class="p-4 space-y-3">
+      <div class="flex justify-between items-start gap-2"><div class="space-y-0.5"><div class="font-bold text-slate-900 text-sm">${esc(b.nom)}</div><div class="text-[11px] text-slate-600">Niveau en cours : <b class="text-slate-900">${b.niveauActuel == null ? '—' : b.niveauActuel} / ${b.niveaux || '?'}</b></div><div class="text-[11px] text-slate-600">Ingénieur chargé : <b class="text-slate-900">${esc(b.ingenieur || '—')}</b></div><div class="text-[11px] text-slate-600">Chef de chantier : ${esc(b.resp || '—')}</div></div>${badge}</div>
+      <div><div class="flex justify-between text-[11px] font-semibold mb-1"><span class="text-slate-600">Avancement global</span><span class="text-orange-700">${p}%</span></div><div class="w-full bg-slate-100 rounded-full h-2.5"><div class="bg-orange-500 h-2.5 rounded-full" style="width:${p}%"></div></div></div>
+      <div class="grid grid-cols-7 gap-1">${PHASES.map(ph => `<div title="${esc(ph[1])} : ${b.ph[ph[0]] || 0}%" class="h-1.5 rounded bg-slate-100 overflow-hidden"><div class="h-full bg-emerald-500" style="width:${b.ph[ph[0]] || 0}%"></div></div>`).join('')}</div>
+      <div class="grid grid-cols-2 gap-2 text-[11px]">
+        <div class="bg-slate-100 rounded-lg p-2"><div class="text-slate-600">Prévision de l’ingénieur</div><div class="text-slate-900 font-bold">${fr(b.prevision)}</div><div class="font-semibold ${t.leftBad ? 'text-rose-700' : 'text-emerald-700'}">${t.leftTxt}</div></div>
+        <div class="bg-slate-100 rounded-lg p-2"><div class="text-slate-600">Projection selon l’avancement</div><div class="text-slate-900 font-bold">${t.proj ? fr(t.proj) : '—'}</div><div class="font-semibold ${t.warn ? 'text-rose-700' : 'text-emerald-700'}">${t.projTxt}</div></div>
+      </div>
+      ${b.note ? `<div class="text-[11px] text-slate-700 bg-white rounded-lg p-2"><i class="fa-solid fa-comment-dots text-orange-600"></i> ${esc(b.note)}</div>` : ''}
+      <div class="text-[10px] text-slate-500">Début : ${fr(b.debut)} · Livraison contractuelle : ${fr(b.livraison)}</div>
+      <div class="flex gap-2"><button onclick="openBatUpdate('${b.id}')" class="flex-1 bg-orange-500 hover:bg-orange-600 text-white text-[11px] font-bold py-1.5 rounded-lg">Mettre à jour l’avancement</button><button onclick="openBatModal('${b.id}')" class="px-2.5 text-[11px] bg-slate-200 text-slate-900 rounded-lg">Modifier</button><button onclick="delBat('${b.id}')" class="px-2.5 text-[11px] bg-slate-100 text-slate-600 rounded-lg">Retirer</button></div></div></div>`;
+  }).join('') : '<div class="md:col-span-2 xl:col-span-3 text-center text-slate-500 text-xs p-6">Aucun bâtiment pour ce chantier. Cliquez sur « Ajouter un bâtiment ».</div>';
+  if (c && B.length) {
+    const avg = Math.round(B.reduce((s, b) => s + batPct(b), 0) / B.length), fins = B.map(b => b.prevision).filter(Boolean).sort(), last = fins[fins.length - 1], dl = last ? daysLeft(last) : 0;
+    $('budget-box').innerHTML += `<div class="border-t border-slate-300 pt-2 mt-2 space-y-1"><div class="flex justify-between font-bold"><span class="text-slate-600">Avancement moyen des bâtiments :</span><span class="text-slate-900">${avg}%</span></div>${last ? `<div class="flex justify-between font-bold"><span class="text-slate-600">Fin prévue (ingénieur) :</span><span class="${dl < 0 ? 'text-rose-700' : 'text-slate-900'}">${fr(last)} · ${dl < 0 ? Math.abs(dl) + ' j de retard' : dl + ' j restants'}</span></div>` : ''}</div>`;
+  }
+}
+function openChantierModal() {
+  if (access() === 'sub' && S.chantiers.length >= S.sub.chantiers) return toast('Votre abonnement couvre ' + S.sub.chantiers + ' chantier(s). Augmentez-le pour en ajouter.');
+  openModal(formWrap('Nouveau chantier', 'chantier', fld('Nom du chantier', 'nom', 'text', 'required placeholder="Chantier Lycée de Mbao"') + fld('Budget alloué (FCFA)', 'budget', 'number', 'required min="0"'), 'Créer le chantier'));
+}
+function openExpenseModal() {
+  if (!S.chantiers.length) return toast('Créez d’abord un chantier');
+  openModal(formWrap('Ajouter une dépense', 'expense', sel('Chantier', 'chantier', scopeChantiers().map(c => [c.id, c.nom])).replace(`value="${esc(selChantier)}"`, `value="${esc(selChantier)}" selected`) + fld('Désignation', 'title', 'text', 'required placeholder="100 sacs de ciment"') +
+    '<div class="grid grid-cols-2 gap-3">' + sel('Catégorie', 'cat', [['Matériaux', 'Matériaux'], ['Carburant', 'Carburant'], ['Main d’œuvre', 'Main d’œuvre'], ['Autres', 'Autres']]) + fld('Montant (FCFA)', 'amount', 'number', 'required min="0"') + '</div>' + fld('Provenance (quincaillerie, fournisseur…)', 'source', 'text', 'placeholder="Fournisseur extérieur"'), 'Enregistrer la dépense'));
+}
+function delExpense(id) { if (!confirm('Supprimer cette dépense ?')) return; S.expenses = S.expenses.filter(e => e.id != id); save(); renderAll(); }
+function openBatModal(id) {
+  if (!S.chantiers.length) return toast('Créez d’abord un chantier');
+  const b = S.batiments.find(x => x.id === id) || {};
+  openModal(formWrap(id ? 'Modifier le bâtiment' : 'Nouveau bâtiment', 'bat',
+    `<input type="hidden" name="id" value="${esc(b.id || '')}"><input type="hidden" name="chantier" value="${esc(b.chantier || selChantier)}">` +
+    fld('Nom du bâtiment', 'nom', 'text', `required value="${esc(b.nom || '')}" placeholder="Bâtiment B, R+3"`) +
+    '<div class="grid grid-cols-2 gap-3">' +
+    fld('Nombre de niveaux (R+2 = 3)', 'niveaux', 'number', `min="1" value="${b.niveaux || ''}"`) +
+    fld('Niveau en cours de construction', 'niveauActuel', 'number', `min="0" value="${b.niveauActuel == null ? '' : b.niveauActuel}"`) +
+    fld('Ingénieur chargé', 'ingenieur', 'text', `value="${esc(b.ingenieur || '')}"`) +
+    fld('Chef de chantier', 'resp', 'text', `value="${esc(b.resp || '')}"`) +
+    fld('Date de début', 'debut', 'date', `value="${b.debut || ''}"`) +
+    fld('Prévision de l’ingénieur (fin)', 'prevision', 'date', `value="${b.prevision || ''}"`) + '</div>' +
+    fld('Livraison contractuelle', 'livraison', 'date', `value="${b.livraison || ''}"`) +
+    fld('Observation de l’ingénieur (facultatif)', 'note', 'text', `value="${esc(b.note || '')}" placeholder="Ex. fin du gros œuvre avant la saison des pluies"`),
+    id ? 'Enregistrer' : 'Ajouter le bâtiment'));
+}
+function openBatUpdate(id) {
+  const b = S.batiments.find(x => x.id === id); if (!b) return;
+  openModal(`<h3 class="text-base font-bold text-slate-900">${esc(b.nom)}</h3><p class="text-xs text-slate-500">Indiquez l’avancement de chaque étape (0 à 100 %).</p><form data-f="batup" class="space-y-3"><input type="hidden" name="id" value="${b.id}">${fld('Niveau en cours de construction (sur ' + (b.niveaux || '?') + ' niveaux)', 'niveauActuel', 'number', `min="0" value="${b.niveauActuel == null ? '' : b.niveauActuel}"`)}` +
+    PHASES.map(p => `<label class="block text-xs font-semibold text-slate-600"><span class="flex justify-between"><span>${p[1]}</span><span class="text-orange-600">${b.ph[p[0]] || 0} %</span></span><input type="range" name="${p[0]}" min="0" max="100" step="5" value="${b.ph[p[0]] || 0}" oninput="this.previousElementSibling.lastElementChild.textContent=this.value+' %'" class="w-full accent-orange-500"></label>`).join('') +
+    '<div class="flex justify-end gap-2 pt-2"><button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl text-xs bg-slate-100 text-slate-600">Annuler</button><button class="px-4 py-2 rounded-xl text-xs bg-yellow-400 text-slate-950 font-bold">Enregistrer</button></div></form>');
+}
+function delBat(id) { if (!confirm('Retirer ce bâtiment ?')) return; S.batiments = S.batiments.filter(b => b.id !== id); save(); renderAll(); }
+function renderChantierExpenses() { const f = $('selectedChantierFilter'); if (!f) return; selChantier = f.value; renderChantiers(); }
+
+/* ---------- TABLEAU DE BORD CEO ---------- */
+function renderCeo() {
+  const budget = S.chantiers.reduce((s, c) => s + c.budget, 0), dep = S.expenses.reduce((s, e) => s + e.amount, 0);
+  const m = day().slice(0, 7), maint = S.pannes.filter(p => (p.date || '').startsWith(m)).reduce((s, p) => s + p.cost, 0), np = S.pannes.filter(p => (p.date || '').startsWith(m)).length;
+  const reste = budget - dep;
+  const ventesMois = S.sales.filter(s => (s.date || '').startsWith(m)).reduce((s, x) => s + x.total, 0);
+  const nbFactures = S.sales.filter(s => (s.date || '').startsWith(m)).length;
+
+  // 1. KPI Cards Épurées & Visuelles avec Icônes Parlantes
+  const kpiCard = (icon, iconBg, iconColor, label, value, suffix, valueColor, sub) =>
+    `<div class="bg-white border border-slate-200 rounded-2xl p-5 space-y-3 hover:shadow-md transition">
+      <div class="flex items-center gap-3">
+        <span class="w-12 h-12 rounded-2xl ${iconBg} ${iconColor} flex items-center justify-center text-xl shadow-sm">
+          <i class="${icon}"></i>
+        </span>
+        <span class="text-xs font-bold text-slate-500 uppercase tracking-wide">${label}</span>
+      </div>
+      <div class="text-2xl sm:text-3xl font-black ${valueColor}">${value} <span class="text-xs font-normal text-slate-500">${suffix}</span></div>
+      <div class="text-xs text-slate-500">${sub}</div>
+    </div>`;
+
+  $('ceo-kpis').innerHTML =
+    kpiCard('fa-solid fa-wallet', 'bg-blue-500/15', 'text-blue-600', 'Budget Total Chantiers', fm(budget), 'FCFA', 'text-slate-900', '<i class="fa-solid fa-building text-blue-500"></i> ' + S.chantiers.length + ' chantier' + (S.chantiers.length > 1 ? 's' : '')) +
+    kpiCard('fa-solid fa-arrow-trend-down', 'bg-rose-500/15', 'text-rose-600', 'Dépenses Engagées', fm(dep), 'FCFA', 'text-rose-600', (budget ? '<div class="w-full bg-slate-100 rounded-full h-1.5 mt-1"><div class="bg-rose-500 h-1.5 rounded-full" style="width:' + Math.min(100, Math.round(dep / budget * 100)) + '%"></div></div><span class="text-[10px]">' + Math.round(dep / budget * 100) + '% du budget consommé</span>' : '—')) +
+    kpiCard('fa-solid fa-piggy-bank', 'bg-emerald-500/15', 'text-emerald-600', 'Reste à Dépenser', fm(reste), 'FCFA', reste < 0 ? 'text-rose-600' : 'text-emerald-600', reste < 0 ? '<span class="text-rose-600 font-bold"><i class="fa-solid fa-triangle-exclamation"></i> Attention : dépassement</span>' : '<i class="fa-solid fa-check-circle text-emerald-500"></i> Dans les limites du budget') +
+    kpiCard('fa-solid fa-wrench', 'bg-amber-500/15', 'text-amber-600', 'Entretien Flotte (Mois)', fm(maint), 'FCFA', 'text-amber-600', '<i class="fa-solid fa-truck text-amber-500"></i> ' + np + ' panne' + (np > 1 ? 's' : '') + ' enregistrée' + (np > 1 ? 's' : ''));
+
+  // 2. Santé des Chantiers (Suivi visuel direct)
+  const healthEl = $('ceo-chantiers-health');
+  if (healthEl) {
+    if (S.chantiers.length) {
+      healthEl.innerHTML = S.chantiers.map(c => {
+        const sp = spent(c.id);
+        const pc = c.budget ? Math.min(100, Math.round(sp / c.budget * 100)) : 0;
+        const over = sp > c.budget;
+        const barColor = pc >= 90 ? 'bg-rose-500' : pc >= 70 ? 'bg-amber-500' : 'bg-emerald-500';
+        const badge = over
+          ? '<span class="inline-flex items-center gap-1 bg-rose-50 text-rose-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-rose-200"><i class="fa-solid fa-circle-exclamation"></i> Dépassement</span>'
+          : pc >= 90
+          ? '<span class="inline-flex items-center gap-1 bg-amber-50 text-amber-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-200"><i class="fa-solid fa-triangle-exclamation"></i> Budget à 90%</span>'
+          : '<span class="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-200"><i class="fa-solid fa-circle-check"></i> Budget maîtrisé</span>';
+
+        return `<div class="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2">
+          <div class="flex items-center justify-between gap-2">
+            <div class="font-bold text-slate-900 text-sm truncate">${esc(c.nom.replace('Chantier ', ''))}</div>
+            ${badge}
+          </div>
+          <div class="w-full bg-slate-200 rounded-full h-2.5">
+            <div class="${barColor} h-2.5 rounded-full transition-all" style="width:${pc}%"></div>
+          </div>
+          <div class="flex justify-between items-center text-[11px] text-slate-600 pt-0.5">
+            <span>Dépensé : <b class="text-slate-900">${fm(sp)}</b> FCFA</span>
+            <span>Reste : <b class="${c.budget - sp < 0 ? 'text-rose-600' : 'text-emerald-700'}">${fm(c.budget - sp)}</b> FCFA</span>
+          </div>
+        </div>`;
+      }).join('');
+    } else {
+      healthEl.innerHTML = '<div class="text-center text-xs text-slate-500 py-6"><i class="fa-solid fa-building text-slate-400 text-2xl mb-2"></i><br>Aucun chantier actif. Cliquez sur « Nouveau chantier » pour démarrer le suivi.</div>';
+    }
+  }
+
+  // 3. Vue Rapide de l'Entreprise (Flotte, Carburant, Stock, Ventes)
+  const quickEl = $('ceo-quick-view');
+  if (quickEl) {
+    const fleetTotal = S.fleet.length;
+    const enPanne = S.fleet.filter(f => f.status === 'En Panne').length;
+    const carbMois = S.fleet.reduce((s, f) => s + (f.carb || []).filter(x => (x.d || '').startsWith(m)).reduce((a, x) => a + (x.amount || 0), 0), 0);
+    const stockItems = S.inventory.length;
+    const lowStock = S.inventory.filter(i => i.qty <= (i.seuil || 0)).length;
+
+    const qRow = (icon, iconBg, label, val, sub) =>
+      `<div class="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl p-3">
+        <span class="w-10 h-10 rounded-xl ${iconBg} flex items-center justify-center text-lg shrink-0">${icon}</span>
+        <div class="flex-1 min-w-0">
+          <div class="text-xs text-slate-500 font-semibold">${label}</div>
+          <div class="text-base font-black text-slate-900">${val}</div>
+        </div>
+        <div class="text-[11px] text-slate-500 text-right shrink-0">${sub}</div>
+      </div>`;
+
+    quickEl.innerHTML =
+      qRow('<i class="fa-solid fa-truck text-amber-600"></i>', 'bg-amber-500/15', 'Flotte Camions', fleetTotal + ' véhicule' + (fleetTotal > 1 ? 's' : ''), enPanne > 0 ? '<span class="text-rose-600 font-bold">' + enPanne + ' en panne</span>' : '<span class="text-emerald-700 font-bold"><i class="fa-solid fa-check"></i> Opérationnels</span>') +
+      qRow('<i class="fa-solid fa-gas-pump text-orange-600"></i>', 'bg-orange-500/15', 'Gazole ce mois', fm(carbMois) + ' FCFA', 'Consommation globale') +
+      qRow('<i class="fa-solid fa-boxes-stacked text-purple-600"></i>', 'bg-purple-500/15', 'Articles en Stock', stockItems + ' référence' + (stockItems > 1 ? 's' : ''), lowStock > 0 ? '<span class="text-amber-700 font-bold">' + lowStock + ' en alerte stock</span>' : '<span class="text-emerald-700 font-bold">Stocks suffisants</span>') +
+      qRow('<i class="fa-solid fa-cash-register text-emerald-600"></i>', 'bg-emerald-500/15', 'Ventes du Mois', fm(ventesMois) + ' FCFA', nbFactures + ' facture' + (nbFactures > 1 ? 's' : '') + ' émise' + (nbFactures > 1 ? 's' : ''));
+  }
+
+  // 4. Alertes et Points d'Attention Immédiats
+  const alertsEl = $('ceo-alerts');
+  if (alertsEl) {
+    const alerts = [];
+    S.chantiers.forEach(c => {
+      const sp = spent(c.id);
+      if (sp > c.budget) alerts.push({ icon: 'fa-solid fa-circle-exclamation', color: 'text-rose-600', bg: 'bg-rose-50 border-rose-200', text: '<b>Chantier ' + esc(c.nom) + '</b> : budget dépassé de <b class="text-rose-700">' + fm(sp - c.budget) + ' FCFA</b>.' });
+      else if (c.budget && sp / c.budget >= 0.9) alerts.push({ icon: 'fa-solid fa-triangle-exclamation', color: 'text-amber-600', bg: 'bg-amber-50 border-amber-200', text: '<b>Chantier ' + esc(c.nom) + '</b> : <b class="text-amber-700">' + Math.round(sp / c.budget * 100) + '%</b> du budget alloué a déjà été dépensé.' });
+    });
+    S.batiments.forEach(b => {
+      const t = batTime(b);
+      if (t.late) alerts.push({ icon: 'fa-solid fa-clock', color: 'text-rose-600', bg: 'bg-rose-50 border-rose-200', text: '<b>Bâtiment ' + esc(b.nom) + '</b> : retard constaté (' + t.leftTxt + ').' });
+    });
+    const unresolvedPannes = S.pannes.filter(p => p.status !== 'Terminé');
+    if (unresolvedPannes.length) alerts.push({ icon: 'fa-solid fa-wrench', color: 'text-amber-600', bg: 'bg-amber-50 border-amber-200', text: '<b>' + unresolvedPannes.length + ' camion' + (unresolvedPannes.length > 1 ? 's' : '') + ' en panne</b> : réparation requise pour relancer les rotations.' });
+    const lowItems = S.inventory.filter(i => i.qty <= (i.seuil || 0));
+    if (lowItems.length) alerts.push({ icon: 'fa-solid fa-boxes-stacked', color: 'text-purple-600', bg: 'bg-purple-50 border-purple-200', text: '<b>Stock faible</b> sur ' + lowItems.slice(0, 3).map(i => esc(i.name)).join(', ') + (lowItems.length > 3 ? '…' : '') + '.' });
+
+    if (alerts.length) {
+      alertsEl.innerHTML = alerts.map(a => `<div class="flex items-start gap-3 ${a.bg} border rounded-xl p-3 text-xs">
+        <i class="${a.icon} ${a.color} mt-0.5 text-sm"></i>
+        <span class="text-slate-800">${a.text}</span>
+      </div>`).join('');
+    } else {
+      alertsEl.innerHTML = '<div class="flex items-center gap-3 bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-xs"><i class="fa-solid fa-circle-check text-emerald-600 text-lg"></i><span class="text-emerald-800 font-bold">Situation excellente : tous les chantiers sont dans les clous et la flotte est opérationnelle.</span></div>';
+    }
+  }
+}
+
+/* ---------- VOYAGES, LIEUX & ROTATIONS FLOTTE ---------- */
+function openQuickTripModal() {
+  const fl = scopeFleet();
+  if (!fl.length) return toast('Ajoutez d’abord un camion à votre flotte.');
+  if (fl.length === 1) return openTripModal(fl[0].id);
+  openModal(`<h3 class="text-base font-bold text-slate-900">Choisir le camion pour le voyage</h3>
+    <p class="text-xs text-slate-600 mb-3">Sélectionnez le camion pour lequel vous saisissez des tours et les lieux de rotation.</p>
+    <div class="space-y-2">
+      ${fl.map(f => `
+        <button onclick="closeModal(); openTripModal(${f.id})" class="w-full text-left p-3 rounded-xl border border-slate-200 hover:border-amber-500 hover:bg-amber-50 transition flex justify-between items-center cursor-pointer">
+          <div>
+            <div class="font-bold text-slate-900 text-sm">${esc(f.name)} (${esc(f.plate)})</div>
+            <div class="text-xs text-slate-500">Chauffeur : ${esc(f.driver)}</div>
+          </div>
+          <i class="fa-solid fa-arrow-right text-amber-600"></i>
+        </button>`).join('')}
+    </div>
+    <div class="flex justify-end pt-3">
+      <button onclick="closeModal()" class="px-4 py-2 rounded-xl text-xs bg-slate-100 text-slate-600 cursor-pointer">Fermer</button>
+    </div>`);
+}
+
+function openTruckTripsModal(id) {
+  const f = S.fleet.find(x => x.id == id); if (!f) return;
+  const trips = f.trips || [];
+  openModal(`
+    <div class="flex justify-between items-center border-b border-slate-200 pb-3">
+      <div>
+        <h3 class="text-base font-bold text-slate-900">Historique des voyages : ${esc(f.name)}</h3>
+        <p class="text-xs text-slate-500">${esc(f.plate)} • Chauffeur : ${esc(f.driver)}</p>
+      </div>
+      <button onclick="closeModal(); openTripModal(${f.id})" class="bg-amber-600 hover:bg-amber-500 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1.5 cursor-pointer">
+        <i class="fa-solid fa-plus"></i> Saisir un tour
+      </button>
+    </div>
+    <div class="max-h-96 overflow-y-auto space-y-2.5 my-3 custom-scrollbar pr-1">
+      ${trips.length ? trips.map((t, idx) => `
+        <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs space-y-1.5">
+          <div class="flex justify-between items-center">
+            <span class="font-bold text-slate-900">${fr(t.d)}</span>
+            <span class="bg-amber-100 text-amber-800 font-bold px-2 py-0.5 rounded-full text-[10px]">${t.voyages || 1} tour${(t.voyages || 1) > 1 ? 's' : ''} · ${fm(t.km || 0)} km</span>
+          </div>
+          <div class="flex items-center gap-1.5 text-slate-800 font-medium">
+            <i class="fa-solid fa-location-dot text-amber-600 text-[10px]"></i>
+            <span>${esc(t.depart || 'Lieu départ non précisé')}</span>
+            <i class="fa-solid fa-arrow-right text-[10px] text-slate-400"></i>
+            <span>${esc(t.arrivee || 'Lieu arrivée non précisé')}</span>
+          </div>
+          ${t.obs ? `<div class="text-[11px] text-slate-500 italic bg-white p-1.5 rounded border border-slate-100">${esc(t.obs)}</div>` : ''}
+          <div class="flex justify-end pt-1">
+            <button onclick="delTrip(${f.id}, ${idx})" class="text-[11px] text-rose-600 hover:underline cursor-pointer">Supprimer ce voyage</button>
+          </div>
+        </div>
+      `).join('') : '<div class="text-center text-xs text-slate-500 py-6">Aucun voyage enregistré pour ce camion.</div>'}
+    </div>
+    <div class="flex justify-end pt-2 border-t border-slate-200">
+      <button onclick="closeModal()" class="px-4 py-2 rounded-xl text-xs bg-slate-100 text-slate-600 cursor-pointer">Fermer</button>
+    </div>
+  `);
+}
+
+function delTrip(truckId, idx) {
+  if (!confirm('Voulez-vous supprimer ce voyage / rotation ?')) return;
+  const f = S.fleet.find(x => x.id == truckId);
+  if (!f || !f.trips) return;
+  f.trips.splice(idx, 1);
+  save();
+  renderAll();
+  closeModal();
+  toast('Voyage supprimé');
+}
+
+function renderTripsJournal() {
+  const selFilter = $('filter-trips-truck');
+  const fl = scopeFleet();
+  if (selFilter) {
+    const curVal = selFilter.value || 'all';
+    selFilter.innerHTML = '<option value="all">Tous les camions</option>' + fl.map(f => `<option value="${f.id}" ${String(curVal) === String(f.id) ? 'selected' : ''}>${esc(f.name)} (${esc(f.plate)})</option>`).join('');
+  }
+  const filterVal = selFilter ? selFilter.value : 'all';
+  const targetFleet = filterVal === 'all' ? fl : fl.filter(f => String(f.id) === String(filterVal));
+
+  const allTrips = [];
+  targetFleet.forEach(f => {
+    (f.trips || []).forEach((t, idx) => {
+      allTrips.push({
+        truckId: f.id,
+        truckName: f.name,
+        truckPlate: f.plate,
+        driver: f.driver,
+        tripIdx: idx,
+        d: t.d || '',
+        voyages: t.voyages || 1,
+        km: t.km || 0,
+        depart: t.depart || '—',
+        arrivee: t.arrivee || '—',
+        obs: t.obs || ''
+      });
+    });
+  });
+
+  allTrips.sort((a, b) => (b.d || '').localeCompare(a.d || ''));
+
+  const tbody = $('trips-journal-body');
+  if (!tbody) return;
+  tbody.innerHTML = allTrips.length ? allTrips.map(t => `
+    <tr class="hover:bg-slate-50 transition">
+      <td class="p-3 font-semibold text-slate-900 whitespace-nowrap">${fr(t.d)}</td>
+      <td class="p-3">
+        <div class="font-bold text-slate-900">${esc(t.truckName)}</div>
+        <div class="text-[10px] text-slate-500">${esc(t.truckPlate)}</div>
+      </td>
+      <td class="p-3 font-medium text-slate-700">${esc(t.driver)}</td>
+      <td class="p-3">
+        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800">
+          ${t.voyages} tour${t.voyages > 1 ? 's' : ''}
+        </span>
+      </td>
+      <td class="p-3">
+        <div class="flex items-center gap-1.5 font-medium text-slate-900">
+          <i class="fa-solid fa-location-dot text-amber-600 text-[10px]"></i>
+          <span>${esc(t.depart)}</span>
+        </div>
+      </td>
+      <td class="p-3">
+        <div class="flex items-center gap-1.5 font-medium text-slate-900">
+          <i class="fa-solid fa-flag-checkered text-emerald-600 text-[10px]"></i>
+          <span>${esc(t.arrivee)}</span>
+        </div>
+      </td>
+      <td class="p-3 text-slate-700 whitespace-nowrap">${t.km ? fm(t.km) + ' km' : '—'}</td>
+      <td class="p-3 text-slate-500 italic max-w-xs truncate">${esc(t.obs || '—')}</td>
+      <td class="p-3 text-right">
+        <button onclick="delTrip(${t.truckId}, ${t.tripIdx})" class="text-slate-400 hover:text-rose-600 transition p-1 cursor-pointer" title="Supprimer ce voyage">
+          <i class="fa-solid fa-trash-can"></i>
+        </button>
+      </td>
+    </tr>
+  `).join('') : '<tr><td colspan="9" class="p-6 text-center text-slate-500">Aucun voyage enregistré. Cliquez sur « Saisir un voyage / tour » pour enregistrer les rotations et les lieux.</td></tr>';
+}
+
+/* ---------- AVIS DES UTILISATEURS ---------- */
+function renderReviews() {
+  const container = $('reviews-container');
+  if (!container) return;
+  const list = S.reviews || [];
+  if (!list.length) {
+    container.innerHTML = '<div class="col-span-2 text-center text-xs text-slate-500 p-6">Aucun avis pour le moment. Soyez le premier à donner votre avis !</div>';
+    return;
+  }
+  container.innerHTML = list.map(r => {
+    const initials = (r.author || 'M').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+    const stars = Array.from({ length: 5 }, (_, i) => `<i class="fa-solid fa-star ${i < (r.rating || 5) ? 'text-amber-400' : 'text-slate-200'}"></i>`).join('');
+    return `
+      <div class="bg-white border border-slate-200 rounded-2xl p-5 space-y-3.5 hover:shadow-md transition">
+        <div class="flex items-start justify-between gap-3">
+          <div class="flex items-center space-x-3">
+            <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-orange-500 to-amber-600 text-white font-black text-sm flex items-center justify-center shadow-md shadow-orange-500/20 shrink-0">
+              ${initials}
+            </div>
+            <div>
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="font-bold text-slate-900 text-sm">${esc(r.author)}</span>
+                <span class="inline-flex items-center gap-1 ${r.isExample ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-blue-50 text-blue-800 border-blue-200'} text-[10px] font-bold px-2 py-0.5 rounded-full border">
+                  <i class="fa-solid ${r.isExample ? 'fa-flask text-amber-600' : 'fa-user-check text-blue-600'} text-[9px]"></i> ${r.isExample ? 'Exemple illustratif' : 'Retour d’expérience'}
+                </span>
+              </div>
+              <div class="text-xs text-slate-500">${esc(r.role)} • <span class="text-slate-700 font-semibold">${esc(r.company)}</span></div>
+            </div>
+          </div>
+          <div class="flex items-center text-xs space-x-0.5 shrink-0">
+            ${stars}
+          </div>
+        </div>
+
+        <p class="text-xs text-slate-700 leading-relaxed italic bg-slate-50/70 p-3 rounded-xl border border-slate-100">
+          « ${esc(r.text)} »
+        </p>
+
+        <div class="flex items-center justify-between text-[11px] text-slate-400 pt-1 border-t border-slate-100">
+          <span class="flex items-center gap-1 text-slate-600 font-medium">
+            <i class="fa-solid fa-location-dot text-orange-500"></i> ${esc(r.city || 'Sénégal')}
+          </span>
+          <span class="bg-orange-50 text-orange-700 font-bold px-2 py-0.5 rounded-full text-[10px] border border-orange-200/50">
+            ${esc(r.tag || 'BTP & Transport')}
+          </span>
+          <span>${fr(r.date)}</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function openReviewModal() {
+  openModal(formWrap('Partager votre avis d’utilisateur MargeUp', 'review',
+    `<p class="text-xs text-slate-600">Votre retour d'expérience aide les entrepreneurs du BTP, transporteurs et quincaillers au Sénégal.</p>
+     <div class="grid grid-cols-2 gap-3">
+       ${fld('Votre nom & prénom *', 'author', 'text', 'required placeholder="Ex. Cheikh Oumar Diop"')}
+       ${fld('Entreprise / Société *', 'company', 'text', 'required placeholder="Ex. Touba BTP SARL"')}
+     </div>
+     <div class="grid grid-cols-2 gap-3">
+       ${fld('Votre fonction / poste *', 'role', 'text', 'required placeholder="Ex. Directeur des Travaux, Gérant..."')}
+       ${sel('Ville / Région *', 'city', [
+         ['Dakar', 'Dakar'],
+         ['Diamniadio', 'Diamniadio'],
+         ['Thiès', 'Thiès'],
+         ['Rufisque', 'Rufisque'],
+         ['Mbour', 'Mbour'],
+         ['Saint-Louis', 'Saint-Louis'],
+         ['Kaolack', 'Kaolack'],
+         ['Ziguinchor', 'Ziguinchor'],
+         ['Autre région', 'Autre région']
+       ])}
+     </div>
+     <div class="grid grid-cols-2 gap-3">
+       ${sel('Note globale *', 'rating', [
+         ['5', '⭐⭐⭐⭐⭐ (5/5 Excellent)'],
+         ['4', '⭐⭐⭐⭐ (4/5 Très bon)'],
+         ['3', '⭐⭐⭐ (3/5 Bon)'],
+         ['2', '⭐⭐ (2/5 Moyen)'],
+         ['1', '⭐ (1/5 À améliorer)']
+       ])}
+       ${sel('Module principal utilisé', 'tag', [
+         ['Flotte & Carburant', 'Flotte & Carburant'],
+         ['Transport & Rotations', 'Transport & Rotations'],
+         ['Quincaillerie & Vente', 'Quincaillerie & Vente'],
+         ['Chantiers & BTP', 'Chantiers & BTP'],
+         ['Direction & Marges', 'Direction & Marges']
+       ])}
+     </div>
+     <label class="block text-xs font-semibold text-slate-500">
+       Votre avis / retour d'expérience *
+       <textarea name="text" required rows="3" placeholder="Racontez comment MargeUp vous aide à contrôler vos camions, vos matériaux ou vos marges..." class="${INPUT} mt-1"></textarea>
+     </label>`,
+    'Publier mon avis'));
+}
+
+/* ---------- AFFICHAGE GÉNÉRAL ---------- */
+function renderDemoBar() {
+  const el = $('demoBar');
+  if (!el) return;
+  if (S.demo) {
+    el.innerHTML = `<div class="mb-6 bg-gradient-to-r from-amber-50 via-orange-50 to-amber-50 border border-amber-300 rounded-2xl p-4 text-xs text-amber-900 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <span class="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold text-sm shadow-sm shrink-0">
+          <i class="fa-solid fa-flask"></i>
+        </span>
+        <div>
+          <div class="font-bold text-sm text-slate-900 flex items-center gap-2">
+            <span>Mode Démonstration Interactive</span>
+            <span class="bg-amber-200 text-amber-900 font-extrabold text-[10px] px-2 py-0.5 rounded-full uppercase">Données Fictives d’Exemple</span>
+          </div>
+          <p class="text-slate-600 text-[11px] mt-0.5">Vous testez l’application avec un jeu de données fictif (quincaillerie, camions, factures d'exemple). Aucune donnée n'affecte une vraie entreprise.</p>
+        </div>
+      </div>
+      <div class="flex flex-wrap items-center gap-2 shrink-0">
+        <button onclick="openCompanyModal()" class="bg-yellow-400 hover:bg-yellow-300 text-slate-950 font-bold shadow-md px-3.5 py-2 rounded-xl text-xs transition shadow-sm cursor-pointer flex items-center gap-1.5">
+          <i class="fa-solid fa-building"></i> <span>Créer mon espace réel (15j gratuits)</span>
+        </button>
+        <button onclick="clearDemo()" class="bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold px-3 py-2 rounded-xl text-xs transition cursor-pointer flex items-center gap-1">
+          <i class="fa-solid fa-broom text-slate-500"></i> <span>Vider les exemples</span>
+        </button>
+      </div>
+    </div>`;
+  } else if (S.co) {
+    el.innerHTML = `<div class="mb-4 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl px-4 py-2 text-xs flex flex-wrap items-center justify-between gap-2 shadow-sm">
+      <span class="flex items-center gap-2 font-medium">
+        <i class="fa-solid fa-circle-check text-emerald-600"></i>
+        <span>Espace Réel Entreprise : <b class="font-bold text-slate-900">${esc(S.co.nom)}</b> (${esc(S.co.ville || 'Sénégal')})</span>
+      </span>
+      <div class="flex items-center gap-2 text-[11px]">
+        <button onclick="activateDemoMode()" class="text-orange-600 hover:text-orange-700 font-bold underline cursor-pointer">
+          Recharger les données de démonstration
+        </button>
+      </div>
+    </div>`;
+  } else {
+    el.innerHTML = '';
+  }
+}
+
+function startDemoMode() {
+  if (!S.inventory.length && !S.fleet.length) {
+    Object.assign(S, seed());
+  }
+  S.demo = true;
+  save();
+  renderAll();
+  switchTab('ceo');
+  toast('Mode Démonstration actif avec données d’exemple');
+}
+
+function activateDemoMode() {
+  if (confirm('Recharger les données de démonstration (exemples fictifs) ?')) {
+    startDemoMode();
+  }
+}
+
+function clearDemo() {
+  if (!confirm('Effacer les données d’exemple et commencer avec les vôtres ?')) return;
+  Object.assign(S, { demo: false, inventory: [], sales: [], pannes: [], expenses: [], fleet: [], chantiers: [], batiments: [], seq: 0 }); save(); renderAll();
+}
+function renderAll() {
+  const coBtn = $('coBtn');
+  if (coBtn) {
+    coBtn.innerHTML = `<i class="fa-solid fa-building text-orange-600"></i> ${esc(S.co ? S.co.nom : 'Créer mon espace')}`;
+  }
+  updateSyncIndicator();
+  try { renderBanner(); } catch (e) { console.warn('renderBanner', e); }
+  try { renderDemoBar(); } catch (e) { console.warn('renderDemoBar', e); }
+  try { renderInventory(); } catch (e) { console.warn('renderInventory', e); }
+  try { renderPannes(); } catch (e) { console.warn('renderPannes', e); }
+  try { renderFleet(); } catch (e) { console.warn('renderFleet', e); }
+  try { renderTripsJournal(); } catch (e) { console.warn('renderTripsJournal', e); }
+  try { renderDrivers(); } catch (e) { console.warn('renderDrivers', e); }
+  try { renderChantiers(); } catch (e) { console.warn('renderChantiers', e); }
+  try { renderCeo(); } catch (e) { console.warn('renderCeo', e); }
+  try { renderContact(); } catch (e) { console.warn('renderContact', e); }
+  try { renderReviews(); } catch (e) { console.warn('renderReviews', e); }
+}
+
+/* ---------- FORMULAIRES ---------- */
+const FORMS = {
+  review(d) {
+    const author = (d.author || '').trim(), company = (d.company || '').trim(), text = (d.text || '').trim();
+    if (!author || !company || !text) { toast('Nom, entreprise et avis obligatoires.'); return; }
+    (S.reviews = S.reviews || []).unshift({
+      id: 'rev-' + uid(),
+      author,
+      company,
+      role: (d.role || 'Utilisateur').trim(),
+      city: d.city || 'Sénégal',
+      rating: +d.rating || 5,
+      tag: d.tag || 'BTP & Transport',
+      text,
+      date: day()
+    });
+    save(); closeModal(); renderAll(); toast('Merci pour votre avis ! Votre témoignage a été publié.');
+  },
+  member(d) {
+    const nom = (d.nom || '').trim(), email = (d.email || '').trim().toLowerCase(), tel = (d.tel || '').trim(), parts = String(d.scope).split(':'), type = parts[0], sid = parts[1];
+    if (!nom || !/^\S+@\S+\.\S+$/.test(email) || tel.replace(/\D/g, '').length < 9) { $('memErr').textContent = 'Nom, e-mail et téléphone valides sont obligatoires.'; return; }
+    if ((d.pw || '').length < 4) { $('memErr').textContent = 'Mot de passe : 4 caractères minimum.'; return; }
+    if (S.team.some(m => m.email === email)) { $('memErr').textContent = 'Cet e-mail est déjà utilisé par un membre.'; return; }
+    const mid = 'm' + uid();
+    S.team.push({ id: mid, nom, email, tel, role: type === 'chantier' ? 'chantier' : type === 'depot' ? 'magasinier' : 'transport', scope: { type, id: sid }, pw: hashPw(d.pw, mid) });
+    save(); renderAll(); openTeamModal(); toast('Membre ajouté');
+  },
+  depot(d) { const x = { id: 'd' + uid(), nom: d.nom.trim() }; S.depots.push(x); selDepot = x.id; save(); closeModal(); renderAll(); toast('Quincaillerie créée'); },
+  sale(d) {
+    const ids = [].concat(d['item[]'] || []), qs = [].concat(d['qty[]'] || []), ps = [].concat(d['pu[]'] || []), lines = [], need = {};
+    for (let k = 0; k < ids.length; k++) {
+      const it = S.inventory.find(x => x.id == ids[k]), q = +qs[k], pu = +ps[k];
+      if (!it || !(q > 0)) continue;
+      const isTonne = isCementOrTonne(it);
+      // Pour le ciment géré en tonnes et vendu en sacs : 20 sacs = 1 tonne
+      const neededInStockUnit = isTonne ? (q / 20) : q;
+      need[it.id] = (need[it.id] || 0) + neededInStockUnit;
+      lines.push({ item: it.id, name: it.name, unit: isTonne ? 'sacs (50kg)' : it.unit, qty: q, pu });
+    }
+    if (!lines.length) { $('saleErr').textContent = 'Ajoutez au moins un article.'; return; }
+    if (d.kind === 'entreprise' && !(d.cnom || '').trim()) { $('saleErr').textContent = 'Le nom de l’entreprise cliente est obligatoire.'; return; }
+    for (const id in need) {
+      const it = S.inventory.find(x => x.id == id);
+      if (need[id] > it.qty) {
+        $('saleErr').textContent = 'Stock insuffisant pour ' + it.name + ' : il reste ' + formatMaterialQty(it) + '.';
+        return;
+      }
+    }
+    lines.forEach(l => {
+      const it = S.inventory.find(x => x.id == l.item);
+      const isTonne = isCementOrTonne(it);
+      const deducted = isTonne ? (l.qty / 20) : l.qty;
+      it.qty = Math.max(0, it.qty - deducted);
+    });
+    const total = lines.reduce((s, l) => s + l.qty * l.pu, 0);
+    const sale = { id: 'v' + uid(), num: 'FAC-' + day().slice(0, 4) + '-' + String(++S.seq).padStart(4, '0'), depot: selDepot, date: day(), stype: d.stype, kind: d.kind, client: { nom: (d.cnom || '').trim() || 'Client comptoir', tel: d.ctel || '' }, pay: d.pay, lines, total };
+    S.sales.unshift(sale); save();
+    // Enregistrement cloud ou file d'attente hors-ligne
+    const sb = getSupabase();
+    if (sb && navigator.onLine) {
+      sb.from('ventes').insert({
+        company_id: S.co?.id,
+        numero_facture: sale.num,
+        client_nom: sale.client?.nom || 'Client comptoir',
+        client_tel: sale.client?.tel || '',
+        type_vente: sale.stype || 'detail',
+        mode_paiement: sale.pay || 'Espèces',
+        montant_total: sale.total || 0,
+        date_vente: sale.date || day()
+      }).then(() => { updateSyncIndicator(); }).catch(() => {
+        enqueueOfflineAction('sale', sale);
+      });
+    } else {
+      enqueueOfflineAction('sale', sale);
+    }
+    renderAll(); openInvoice(sale.id);
+  },
+  async co(d) {
+    const nom = (d.nom || '').trim();
+    const resp = (d.resp || '').trim();
+    const email = (d.email || '').trim().toLowerCase();
+    const tel = (d.tel || '').trim();
+    const ville = (d.ville || '').trim();
+    const password = d.pw ? d.pw.trim() : '';
+
+    if (!nom || !resp || !/^\S+@\S+\.\S+$/.test(email) || tel.replace(/\D/g, '').length < 9) {
+      return toast('Le nom, l’e-mail et le téléphone du patron sont obligatoires (min 9 chiffres).');
+    }
+
+    // Si Supabase est connecté, inscription sécurisée via Supabase Auth avec envoi d'email réel
+    const sb = getSupabase();
+    if (sb && password && password.length >= 6) {
+      try {
+        const { data: authData, error: authErr } = await sb.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              responsable_nom: resp,
+              company_name: nom,
+              telephone: tel,
+              ville
+            }
+          }
+        });
+        if (authErr) {
+          toast('Supabase Auth : ' + authErr.message);
+        } else {
+          toast('Email de confirmation envoyé à ' + email + ' !');
+          closeModal();
+          return;
+        }
+      } catch (err) {
+        console.warn('[Supabase Auth SignUp]', err);
+      }
+    }
+
+    // Si l'entreprise existe déjà et que l'e-mail n'a pas changé, mise à jour directe sans re-vérification
+    if (S.co && S.co.email && S.co.email.toLowerCase() === email) {
+      S.co.nom = nom;
+      S.co.resp = resp;
+      S.co.tel = tel;
+      S.co.ville = ville;
+      save();
+      closeModal();
+      renderAll();
+      return toast('Informations de l’entreprise mises à jour.');
+    }
+
+    // Sinon (création d'espace OU changement d'adresse e-mail), on déclenche le flux de vérification par code
+    const id = (S.co && S.co.id) || uid();
+    pendingCompanyData = {
+      id,
+      nom,
+      resp,
+      email,
+      tel,
+      ville,
+      since: (S.co && S.co.since) || day()
+    };
+    sendVerificationEmail(email);
+    openVerificationModal();
+    toast('Code de vérification généré : ' + verificationCode);
+  },
+  verifyEmail(d) {
+    const code = (d.code || ($('emailCodeInput') ? $('emailCodeInput').value : '')).trim();
+    const errBox = $('verifyCodeErr');
+
+    if (!verificationCode || !pendingCompanyData) {
+      if (errBox) errBox.textContent = 'Session expirée. Veuillez recommencer la saisie.';
+      return toast('Session de vérification expirée.');
+    }
+
+    if (verificationExpiry && Date.now() > verificationExpiry) {
+      if (errBox) errBox.textContent = 'Ce code a expiré. Cliquez sur « Renvoyer un code ».';
+      return toast('Code de vérification expiré.');
+    }
+
+    if (code !== verificationCode) {
+      if (errBox) errBox.textContent = 'Code incorrect. Veuillez saisir les 6 chiffres affichés.';
+      return toast('Code de vérification incorrect');
+    }
+
+    // Code valide et vérifié avec succès !
+    const first = !S.co;
+    S.co = {
+      ...pendingCompanyData,
+      emailVerified: true,
+      verifiedAt: day()
+    };
+
+    if (!S.trial && !S.sub) {
+      S.trial = { start: day(), end: addDays(day(), TRIAL_DAYS) };
+    }
+
+    verificationCode = null;
+    pendingCompanyData = null;
+    verificationExpiry = null;
+    if (typeof window !== 'undefined') window.verificationCode = null;
+
+    save();
+    closeModal();
+    renderAll();
+    toast(first ? '🎉 Bienvenue ! E-mail vérifié et essai gratuit de ' + TRIAL_DAYS + ' jours activé.' : '✅ E-mail vérifié et entreprise mise à jour avec succès.');
+  },
+  rolepw(d) {
+    let ok = false, user = null;
+    if (d.member) { user = S.team.find(m => m.id === d.member); ok = !!user && hashPw(d.pw, user.id) === user.pw; }
+    else ok = hashPw(d.pw, S.co.id) === S.roles[d.role];
+    if (!ok) { $('pwErr').textContent = 'Mot de passe incorrect.'; return; }
+    curUser = user; try { sessionStorage.setItem('safebtp.user', user ? user.id : ''); } catch (e) {}
+    closeModal(); enterRole(d.role); const cb = pendingRole && pendingRole.cb; pendingRole = null; if (cb) cb();
+  },
+  stock(d) {
+    let q = +d.qty;
+    const inputUnit = (d.input_unit || d.unit || 'unités').toLowerCase();
+    const nm = d.name.trim().toLowerCase();
+    let ex = S.inventory.find(i => i.depot === selDepot && i.name.toLowerCase() === nm);
+
+    if (ex) {
+      const exUnit = (ex.unit || '').toLowerCase();
+      const exIsTonne = exUnit.includes('tonne') || isCementOrTonne(ex);
+      let addQty = q;
+      // Conversion 1 tonne = 20 sacs
+      if (exIsTonne && inputUnit.includes('sac')) {
+        addQty = q / 20; // 20 sacs = 1 tonne
+      } else if (exUnit.includes('sac') && inputUnit.includes('tonne')) {
+        addQty = q * 20; // 1 tonne = 20 sacs
+      }
+      ex.qty += addQty;
+      if (+d.price) ex.price = +d.price;
+      if (+d.priceGros) ex.priceGros = +d.priceGros;
+    } else {
+      let finalUnit = d.unit || 'unités';
+      let finalQty = q;
+      if (finalUnit === 'tonne' && inputUnit.includes('sac')) {
+        finalQty = q / 20;
+      } else if (finalUnit === 'sacs' && inputUnit.includes('tonne')) {
+        finalQty = q * 20;
+      }
+      S.inventory.push({
+        id: Date.now(),
+        depot: selDepot,
+        name: d.name.trim(),
+        cat: d.cat || 'Divers',
+        qty: finalQty,
+        unit: finalUnit,
+        uom_ratio: (finalUnit === 'tonne' || isCementOrTonne({ name: d.name, unit: finalUnit })) ? 20 : 1,
+        sale_unit: finalUnit === 'tonne' ? 'sac 50kg' : finalUnit,
+        price: +d.price || 0,
+        priceGros: +d.priceGros || +d.price || 0,
+        lastChantier: ''
+      });
+    }
+    save();
+    // Enregistrement cloud ou file d'attente hors-ligne
+    const sb = getSupabase();
+    if (sb && navigator.onLine) {
+      sb.from('articles').upsert({
+        company_id: S.co?.id,
+        nom: d.name,
+        categorie: d.cat || 'Divers',
+        unite: d.unit || 'unités',
+        stock_actuel: (ex ? ex.qty : finalQty),
+        prix_detail: +d.price || 0,
+        prix_gros: +d.priceGros || +d.price || 0
+      }).then(() => { updateSyncIndicator(); }).catch(() => {
+        enqueueOfflineAction('stock', { name: d.name, cat: d.cat, unit: d.unit, qty: (ex ? ex.qty : finalQty), price: +d.price, priceGros: +d.priceGros });
+      });
+    } else {
+      enqueueOfflineAction('stock', { name: d.name, cat: d.cat, unit: d.unit, qty: (ex ? ex.qty : finalQty), price: +d.price, priceGros: +d.priceGros });
+    }
+    closeModal(); renderAll(); toast('Stock mis à jour avec conversion exacte');
+  },
+  dispatch(d) {
+    const i = S.inventory.find(x => x.id == d.id), q = +d.qty, c = S.chantiers.find(x => x.id === d.chantier);
+    if (!i || !c) return;
+    const isTonne = isCementOrTonne(i);
+    const dispUnit = (d.dispatch_unit || i.unit || '').toLowerCase();
+    
+    let deductedInStockUnit = q;
+    let label = '';
+    let expAmount = 0;
+
+    if (isTonne && dispUnit.includes('sac')) {
+      deductedInStockUnit = q / 20; // 20 sacs = 1 tonne
+      label = fm(q) + ' sac' + (q > 1 ? 's' : '') + ' de 50 kg (' + (deductedInStockUnit >= 1 ? fm(deductedInStockUnit) + ' t' : q + ' sacs') + ')';
+      expAmount = q * (i.price || 0);
+    } else if (isTonne && dispUnit.includes('tonne')) {
+      deductedInStockUnit = q;
+      label = fm(q) + ' tonne' + (q > 1 ? 's' : '') + ' (' + fm(q * 20) + ' sacs)';
+      expAmount = (q * 20) * (i.price || 0);
+    } else {
+      deductedInStockUnit = q;
+      label = fm(q) + ' ' + esc(i.unit);
+      expAmount = q * (i.price || 0);
+    }
+
+    if (deductedInStockUnit > i.qty) {
+      $('dispErr').textContent = 'Stock insuffisant : il reste ' + formatMaterialQty(i) + '.';
+      return;
+    }
+    i.qty -= deductedInStockUnit;
+    i.lastChantier = c.nom.replace('Chantier ', '');
+    S.expenses.push({ id: Date.now(), chantier: c.id, date: day(), title: label + ' ' + i.name, source: 'Quincaillerie principale', cat: 'Matériaux', amount: expAmount });
+    save(); renderAll();
+    openModal(`<div id="bon" class="font-mono text-xs space-y-1"><div class="text-center font-bold border-b border-slate-300 pb-2 text-slate-900">${esc(S.co ? S.co.nom : 'MARGEUP')} · BON DE SORTIE</div><div class="flex justify-between"><span>Date</span><span>${fr(day())}</span></div><div class="flex justify-between"><span>Chantier</span><span>${esc(c.nom)}</span></div><div class="flex justify-between"><span>Article</span><span>${esc(i.name)}</span></div><div class="flex justify-between font-bold"><span>Quantité</span><span>${esc(label)}</span></div><div class="flex justify-between font-bold"><span>Valeur</span><span>${fm(expAmount)} FCFA</span></div></div><p class="text-[11px] text-emerald-600">La dépense a été ajoutée au chantier.</p><div class="flex justify-end gap-2"><button onclick="closeModal()" class="px-4 py-2 rounded-xl text-xs bg-slate-100 text-slate-600">Fermer</button><button onclick="window.print()" class="px-4 py-2 rounded-xl text-xs bg-purple-600 text-white font-bold">Imprimer</button></div>`);
+  },
+  trip(d) {
+    const f = S.fleet.find(x => x.id == d.id);
+    if (!f) return;
+    (f.trips = f.trips || []).unshift({
+      d: d.d || day(),
+      voyages: +d.voyages || 1,
+      km: +d.km || 0,
+      depart: (d.depart || '').trim(),
+      arrivee: (d.arrivee || '').trim(),
+      obs: (d.obs || '').trim()
+    });
+    save(); closeModal(); renderAll(); toast('Voyage, rotation et lieux enregistrés');
+  },
+  truck(d) { S.fleet.push({ id: Date.now(), name: d.name, plate: d.plate, driver: d.driver, type: d.type || 'benne', status: 'Disponible', carb: [] }); save(); closeModal(); renderAll(); toast('Camion ajouté'); },
+  fuel(d) {
+    const f = S.fleet.find(x => x.id == d.id), l = +d.l, amount = +d.amount || 0;
+    (f.carb = f.carb || []).unshift({ d: day(), l, amount, km: d.km ? +d.km : null, station: d.station || '' });
+    if (d.chantier && amount) S.expenses.unshift({ id: Date.now(), chantier: d.chantier, date: day(), title: 'Carburant ' + f.name + ' (' + f.plate + ') : ' + fm(l) + ' L', source: d.station || 'Station', cat: 'Carburant', amount });
+    save(); closeModal(); renderAll(); toast(d.chantier && amount ? 'Plein enregistré et ajouté aux dépenses du chantier' : 'Plein enregistré');
+  },
+  panne(d) {
+    const f = S.fleet.find(x => x.id == d.fid);
+    S.pannes.unshift({ id: Date.now(), date: day(), vehicle: f.name + ' (' + f.plate + ')', driver: f.driver, diag: d.diag, severity: d.sev, status: d.st, cost: +d.cost || 0 });
+    if (d.st !== 'Terminé') f.status = 'En Panne';
+    save(); closeModal(); renderAll(); toast('Panne enregistrée');
+  },
+  chantier(d) { const c = { id: 'c' + uid(), nom: d.nom.trim(), budget: +d.budget }; S.chantiers.push(c); selChantier = c.id; save(); closeModal(); renderAll(); toast('Chantier créé'); },
+  expense(d) { S.expenses.unshift({ id: Date.now(), chantier: d.chantier, date: day(), title: d.title, source: d.source || 'Non précisé', cat: d.cat, amount: +d.amount }); selChantier = d.chantier; save(); closeModal(); renderAll(); toast('Dépense enregistrée'); },
+  bat(d) {
+    let b = S.batiments.find(x => x.id === d.id);
+    if (!b) { const ph = {}; PHASES.forEach(p => ph[p[0]] = 0); b = { id: 'b' + uid(), chantier: d.chantier, ph }; S.batiments.push(b); }
+    Object.assign(b, { nom: d.nom.trim(), niveaux: +d.niveaux || 0, niveauActuel: d.niveauActuel === '' ? 0 : +d.niveauActuel, ingenieur: d.ingenieur, resp: d.resp, debut: d.debut, prevision: d.prevision, livraison: d.livraison, note: d.note });
+    save(); closeModal(); renderAll(); toast('Bâtiment enregistré');
+  },
+  batup(d) { const b = S.batiments.find(x => x.id === d.id); PHASES.forEach(p => b.ph[p[0]] = +d[p[0]]); if (d.niveauActuel !== undefined && d.niveauActuel !== '') b.niveauActuel = +d.niveauActuel; save(); closeModal(); renderAll(); toast('Avancement mis à jour : ' + batPct(b) + '%'); },
+  pay(d) {
+    const until = addDays(day(), calc.isAnnual ? 365 : 30);
+    S.sub = { trucks: calc.camions, chantiers: calc.chantiers, quinc: calc.quinc, annual: calc.isAnnual, amount: Math.round(calc.total), method: payMe === 'w' ? 'Wave' : 'Orange Money', phone: d.phone, ref: d.ref, date: day(), until, status: 'verif' };
+    save(); closeModal(); renderAll(); switchTab('accueil'); toast('Abonnement activé. Paiement en cours de vérification.');
+  },
+  contact(d) {
+    const nom = (d.nom || '').trim(), tel = (d.tel || '').trim(), msg = (d.message || '').trim(), obj = d.objet || 'Demande de renseignement';
+    if (!nom || tel.length < 9 || !msg) return toast('Veuillez renseigner votre nom, téléphone et message.');
+    closeModal();
+    toast('Merci ' + nom + ' ! Votre message a bien été envoyé. Notre équipe vous recontacte rapidement.');
+    const waText = encodeURIComponent(`Bonjour MargeUp,\nJe suis ${nom} (Tél: ${tel}).\nObjet: ${obj}\nMessage: ${msg}`);
+    const num = CONTACT.tel.replace(/\D/g, '');
+    setTimeout(() => {
+      if (confirm('Souhaitez-vous également ouvrir WhatsApp pour échanger directement avec notre conseiller ?')) {
+        window.open('https://wa.me/221' + num + '?text=' + waText, '_blank');
+      }
+    }, 400);
+  }
+};
+
+/* ---------- VENTES (DÉTAIL ET GROS) ET FACTURES ---------- */
+const PAYS = ['Espèces', 'Wave', 'Orange Money', 'Crédit'];
+function openSaleModal() {
+  if (!S.inventory.some(i => i.depot === selDepot)) return toast('Ajoutez d’abord des articles à cette quincaillerie');
+  const dp = S.depots.find(d => d.id === selDepot) || {};
+  openModal(`<h3 class="text-base font-bold text-slate-900">Nouvelle vente · ${esc(dp.nom || '')}</h3><form data-f="sale" class="space-y-3">
+    <div class="grid grid-cols-2 gap-3">${sel('Type de vente', 'stype', [['detail', 'Détail'], ['gros', 'Gros']]).replace('<select', '<select onchange="saleType()"')}${sel('Type de client', 'kind', [['particulier', 'Particulier (population)'], ['entreprise', 'Entreprise']])}${fld('Nom du client', 'cnom', 'text', 'placeholder="Client comptoir"')}${fld('Téléphone (facultatif)', 'ctel', 'tel')}</div>
+    ${sel('Paiement', 'pay', PAYS.map(p => [p, p]))}
+    <div id="saleRows" class="space-y-2"></div>
+    <button type="button" onclick="addSaleRow()" class="text-xs text-orange-700 font-bold">+ Ajouter un article</button>
+    <div class="flex justify-between text-sm font-bold text-slate-900 border-t border-slate-200 pt-2"><span>Total</span><span id="saleTotal">0 FCFA</span></div>
+    <div id="saleErr" class="text-xs text-rose-600"></div>
+    <div class="flex justify-end gap-2 pt-2"><button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl text-xs bg-slate-100 text-slate-600">Annuler</button><button class="px-4 py-2 rounded-xl text-xs bg-yellow-400 text-slate-950 font-bold">Valider et éditer la facture</button></div></form>`);
+  addSaleRow();
+}
+function addSaleRow() {
+  const I = S.inventory.filter(i => i.depot === selDepot);
+  $('saleRows').insertAdjacentHTML('beforeend', `<div class="sale-row grid grid-cols-12 gap-2 items-end"><label class="col-span-12 sm:col-span-6 text-[11px] text-slate-600">Article<select name="item[]" onchange="saleFill(this)" class="${INPUT} mt-1">${I.map(i => `<option value="${i.id}">${esc(i.name)} (${formatMaterialQty(i)})</option>`).join('')}</select></label><label class="col-span-5 sm:col-span-2 text-[11px] text-slate-600">Quantité (sacs/unités)<input name="qty[]" type="number" min="0.01" step="any" required value="1" oninput="saleCalc()" class="${INPUT} mt-1"></label><label class="col-span-7 sm:col-span-4 text-[11px] text-slate-600">Prix unitaire (FCFA)<input name="pu[]" type="number" min="0" required oninput="saleCalc()" class="${INPUT} mt-1"></label></div>`);
+  saleFill($('saleRows').lastElementChild.querySelector('select'));
+}
+function saleFill(se) {
+  const i = S.inventory.find(x => x.id == se.value), t = document.querySelector('#modalBox [name=stype]').value, row = se.closest('.sale-row');
+  row.querySelector('[name="pu[]"]').value = i ? (t === 'gros' ? (i.priceGros || i.price) : i.price) : 0; saleCalc();
+}
+function saleType() { document.querySelectorAll('#saleRows select').forEach(saleFill); }
+function saleCalc() { let t = 0; document.querySelectorAll('#saleRows .sale-row').forEach(r => { t += (+r.querySelector('[name="qty[]"]').value || 0) * (+r.querySelector('[name="pu[]"]').value || 0); }); $('saleTotal').textContent = fm(t) + ' FCFA'; }
+function renderSales() {
+  const L = S.sales.filter(s => s.depot === selDepot), td = day(), T = L.filter(s => s.date === td), sum = f => T.filter(f).reduce((x, s) => x + s.total, 0);
+  $('sales-kpis').innerHTML = [['Ventes du jour', sum(() => true), 'text-slate-900'], ['Dont détail', sum(s => s.stype === 'detail'), 'text-emerald-700'], ['Dont gros', sum(s => s.stype === 'gros'), 'text-amber-700']].map(k => `<div class="bg-slate-50 border border-slate-200 rounded-xl p-4"><div class="text-[11px] text-slate-600">${k[0]}</div><div class="text-xl font-black ${k[2]}">${fm(k[1])} <span class="text-xs font-normal text-slate-500">FCFA</span></div></div>`).join('');
+  $('sales-table-body').innerHTML = L.length ? L.slice(0, 30).map(s => `<tr class="hover:bg-slate-50"><td class="p-3 text-slate-600">${fr(s.date)}</td><td class="p-3 font-bold text-slate-900">${esc(s.num)}</td><td class="p-3 text-slate-700">${esc(s.client.nom)}<div class="text-[10px] text-slate-500">${s.kind === 'entreprise' ? 'Entreprise' : 'Particulier'}</div></td><td class="p-3"><span class="text-[10px] px-2 py-0.5 rounded border ${s.stype === 'gros' ? 'bg-amber-500/15 text-amber-700 border-amber-500/30' : 'bg-emerald-500/15 text-emerald-700 border-emerald-500/30'}">${s.stype === 'gros' ? 'Gros' : 'Détail'}</span></td><td class="p-3 font-bold text-orange-700">${fm(s.total)} FCFA</td><td class="p-3 text-slate-600">${esc(s.pay)}</td><td class="p-3"><button onclick="openInvoice('${s.id}')" class="bg-purple-600 hover:bg-purple-500 text-white text-[11px] px-2.5 py-1 rounded-lg">Facture</button></td></tr>`).join('') : '<tr><td colspan="7" class="p-6 text-center text-slate-500">Aucune vente ni facture enregistrée. Cliquez sur « Nouvelle vente » pour créer votre première facture.</td></tr>';
+}
+function invoiceHtml(s) {
+  const co = S.co || { nom: 'MargeUp' }, dp = S.depots.find(d => d.id === s.depot) || {}, th = al => '<th style="text-align:' + al + ';padding:6px;background:#f3f4f6;border-bottom:1px solid #ddd">', td = al => '<td style="text-align:' + al + ';padding:6px;border-bottom:1px solid #eee">';
+  return `<div style="font-family:Arial,sans-serif;color:#111;font-size:13px"><div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap"><div><div style="font-size:18px;font-weight:bold">${esc(co.nom)}</div><div>${esc(dp.nom || '')}</div><div>${esc(co.ville || '')}${co.tel ? ' · ' + esc(co.tel) : ''}</div><div>${esc(co.email || '')}</div></div><div style="text-align:right"><div style="font-size:18px;font-weight:bold">FACTURE</div><div>N° ${esc(s.num)}</div><div>Date : ${fr(s.date)}</div><div>Vente ${s.stype === 'gros' ? 'en gros' : 'au détail'}</div></div></div>
+  <div style="margin:14px 0;padding:8px;background:#f9fafb;border-radius:6px"><b>Client :</b> ${esc(s.client.nom)} (${s.kind === 'entreprise' ? 'entreprise' : 'particulier'})${s.client.tel ? ' · ' + esc(s.client.tel) : ''}</div>
+  <table style="width:100%;border-collapse:collapse"><tr>${th('left')}Désignation</th>${th('right')}Qté</th>${th('right')}Prix unitaire</th>${th('right')}Montant</th></tr>${s.lines.map(l => `<tr>${td('left')}${esc(l.name)}</td>${td('right')}${fm(l.qty)} ${esc(l.unit)}</td>${td('right')}${fm(l.pu)}</td>${td('right')}${fm(l.qty * l.pu)}</td></tr>`).join('')}</table>
+  <div style="text-align:right;font-size:16px;font-weight:bold;margin-top:12px">TOTAL : ${fm(s.total)} FCFA</div><div style="margin-top:6px">Paiement : ${esc(s.pay)}</div><div style="margin-top:16px;color:#555;font-size:11px">Montants en FCFA. Merci de votre confiance.</div></div>`;
+}
+function openInvoice(id) {
+  const s = S.sales.find(x => x.id === id); if (!s) return;
+  openModal(`<div id="invoice" style="background:#fff;border-radius:12px;padding:18px;color:#111">${invoiceHtml(s)}</div><div class="flex flex-wrap justify-end gap-2 pt-2"><button onclick="closeModal()" class="px-4 py-2 rounded-xl text-xs bg-slate-100 text-slate-700">Fermer</button><button onclick="shareInvoice('${s.id}')" class="px-4 py-2 rounded-xl text-xs bg-emerald-600 text-white font-bold">Envoyer</button><button onclick="downloadInvoice('${s.id}')" class="px-4 py-2 rounded-xl text-xs bg-amber-500 text-slate-950 font-bold">Télécharger le PDF</button><button onclick="window.print()" class="px-4 py-2 rounded-xl text-xs bg-purple-600 text-white font-bold">Imprimer</button></div>`);
+}
+function pdfBlob(pages) {
+  const enc = t => String(t).replace(/[’‘]/g, "'").replace(/[“”]/g, '"').replace(/œ/g, 'oe').replace(/…/g, '...').replace(/[\u202f\u00a0]/g, ' ').replace(/[^\x20-\xFF]/g, '?').replace(/[\\()]/g, '\\$&');
+  const objs = [], add = o => objs.push(o);
+  add('<< /Type /Catalog /Pages 2 0 R >>'); add('PAGES');
+  add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>'); add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
+  const kids = [];
+  pages.forEach(P => {
+    const c = P.map(o => 'BT /' + (o.b ? 'F2' : 'F1') + ' ' + (o.s || 10) + ' Tf ' + o.x + ' ' + o.y + ' Td (' + enc(o.t) + ') Tj ET').join('\n');
+    add('<< /Length ' + c.length + ' >>\nstream\n' + c + '\nendstream'); const cn = objs.length;
+    add('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ' + cn + ' 0 R >>'); kids.push(objs.length + ' 0 R');
+  });
+  objs[1] = '<< /Type /Pages /Kids [' + kids.join(' ') + '] /Count ' + kids.length + ' >>';
+  let out = '%PDF-1.4\n'; const off = [];
+  objs.forEach((o, i) => { off.push(out.length); out += (i + 1) + ' 0 obj\n' + o + '\nendobj\n'; });
+  const x = out.length;
+  out += 'xref\n0 ' + (objs.length + 1) + '\n0000000000 65535 f \n' + off.map(o => String(o).padStart(10, '0') + ' 00000 n \n').join('') + 'trailer\n<< /Size ' + (objs.length + 1) + ' /Root 1 0 R >>\nstartxref\n' + x + '\n%%EOF';
+  const u = new Uint8Array(out.length); for (let i = 0; i < out.length; i++) u[i] = out.charCodeAt(i) & 255;
+  return new Blob([u], { type: 'application/pdf' });
+}
+function invoicePdf(s) {
+  const co = S.co || { nom: 'MargeUp' }, dp = S.depots.find(d => d.id === s.depot) || {}, pages = [[]]; let P = pages[0], y = 800;
+  const t = (x, yy, text, b, sz) => P.push({ x, y: yy, t: text, b, s: sz || 10 });
+  t(40, y, co.nom, 1, 18); t(400, y, 'FACTURE', 1, 18); y -= 18;
+  t(40, y, dp.nom || '', 0); t(400, y, 'N° ' + s.num, 1, 11); y -= 13;
+  t(40, y, [co.ville, co.tel].filter(Boolean).join(' - '), 0); t(400, y, 'Date : ' + fr(s.date), 0); y -= 13;
+  t(40, y, co.email || '', 0); t(400, y, 'Vente ' + (s.stype === 'gros' ? 'en gros' : 'au détail'), 0); y -= 28;
+  t(40, y, 'Client : ' + s.client.nom + ' (' + (s.kind === 'entreprise' ? 'entreprise' : 'particulier') + ')' + (s.client.tel ? ' - ' + s.client.tel : ''), 1, 11); y -= 28;
+  t(40, y, 'Désignation', 1); t(310, y, 'Quantité', 1); t(400, y, 'Prix unitaire', 1); t(490, y, 'Montant', 1); y -= 18;
+  s.lines.forEach(l => { if (y < 90) { P = []; pages.push(P); y = 800; } t(40, y, String(l.name).slice(0, 44), 0); t(310, y, fm(l.qty) + ' ' + l.unit, 0); t(400, y, fm(l.pu), 0); t(490, y, fm(l.qty * l.pu), 0); y -= 15; });
+  y -= 12; if (y < 90) { P = []; pages.push(P); y = 800; }
+  t(380, y, 'TOTAL : ' + fm(s.total) + ' FCFA', 1, 13); y -= 24; t(40, y, 'Paiement : ' + s.pay, 0); y -= 40; t(40, y, 'Montants en FCFA. Merci de votre confiance.', 0, 9);
+  return pdfBlob(pages);
+}
+function downloadInvoice(id) {
+  const s = S.sales.find(x => x.id === id); if (!s) return;
+  const a = document.createElement('a'); a.href = URL.createObjectURL(invoicePdf(s)); a.download = 'facture-' + s.num + '.pdf'; a.click();
+}
+function shareInvoice(id) {
+  const s = S.sales.find(x => x.id === id); if (!s) return;
+  const msg = (S.co ? S.co.nom : 'MargeUp') + ' : facture ' + s.num + ' du ' + fr(s.date) + ', total ' + fm(s.total) + ' FCFA. Merci de votre confiance.';
+  try {
+    const f = new File([invoicePdf(s)], 'facture-' + s.num + '.pdf', { type: 'application/pdf' });
+    if (navigator.canShare && navigator.canShare({ files: [f] })) return navigator.share({ files: [f], title: 'Facture ' + s.num, text: msg }).catch(() => {});
+  } catch (e) {}
+  let ph = String(s.client.tel || '').replace(/\D/g, ''); if (ph.length === 9) ph = '221' + ph;
+  window.open('https://wa.me/' + ph + '?text=' + encodeURIComponent(msg), '_blank'); toast('Téléchargez le PDF puis joignez-le au message WhatsApp.');
+}
+
+/* ---------- ÉQUIPE : ADMINS PAR CHANTIER, QUINCAILLERIE ET CAMION ---------- */
+function openTeamModal() {
+  if (!S.co) return openCompanyModal();
+  if (curRole !== 'ceo') return toast('Réservé au patron : repassez au rôle CEO.');
+  openModal(`<h3 class="text-base font-bold text-slate-900">Mon équipe</h3><p class="text-xs text-slate-600">Un admin par chantier, par quincaillerie et par camion (ou pour toute la flotte). Nom, e-mail et téléphone sont obligatoires.</p>
+  <div class="space-y-2">${S.team.length ? S.team.map(m => `<div class="bg-slate-100 rounded-xl p-3 flex justify-between gap-2 items-start"><div class="text-xs"><div class="font-bold text-slate-900">${esc(m.nom)}</div><div class="text-slate-700">${esc(scopeLabel(m))}</div><div class="text-slate-500">${esc(m.email)} · ${esc(m.tel)}</div></div><button onclick="delMember('${m.id}')" class="text-[11px] text-slate-700 bg-slate-200 px-2 py-1 rounded-lg">Retirer</button></div>`).join('') : '<div class="text-xs text-slate-500 text-center p-4">Aucun membre pour l’instant.</div>'}</div>
+  <div class="flex justify-end gap-2"><button onclick="closeModal()" class="px-4 py-2 rounded-xl text-xs bg-slate-100 text-slate-600">Fermer</button><button onclick="openMemberModal()" class="px-4 py-2 rounded-xl text-xs bg-yellow-400 text-slate-950 font-bold">Ajouter un membre</button></div>`);
+}
+function openMemberModal() {
+  const opts = S.chantiers.map(c => ['chantier:' + c.id, 'Admin du chantier : ' + c.nom.replace('Chantier ', '')]).concat(S.depots.map(d => ['depot:' + d.id, 'Admin de la quincaillerie : ' + d.nom]), [['truck:all', 'Admin de toute la flotte']], S.fleet.map(f => ['truck:' + f.id, 'Admin du camion : ' + f.name + ' (' + f.plate + ')']));
+  openModal(formWrap('Ajouter un membre', 'member', fld('Nom et prénom *', 'nom', 'text', 'required') + '<div class="grid grid-cols-2 gap-3">' + fld('E-mail *', 'email', 'email', 'required') + fld('Téléphone *', 'tel', 'tel', 'required minlength="9"') + '</div>' + sel('Rôle et responsabilité *', 'scope', opts) + fld('Mot de passe de connexion * (4 caractères minimum)', 'pw', 'password', 'required minlength="4" autocomplete="new-password"') + '<div id="memErr" class="text-xs text-rose-600"></div>', 'Ajouter'));
+}
+function delMember(id) { if (!confirm('Retirer ce membre ?')) return; S.team = S.team.filter(m => m.id !== id); save(); openTeamModal(); }
+function openContactModal(prefillSubject = '') {
+  openModal(formWrap('Nous contacter', 'contact',
+    `<p class="text-xs text-slate-500 mb-2">Notre équipe basée au Sénégal vous répond dans les plus brefs délais.</p>` +
+    fld('Nom et prénom *', 'nom', 'text', 'required placeholder="Ex. Ousmane Ndiaye"') +
+    '<div class="grid grid-cols-2 gap-3">' +
+      fld('Téléphone (WhatsApp) *', 'tel', 'tel', 'required minlength="9" placeholder="77 000 00 00"') +
+      fld('E-mail (facultatif)', 'email', 'email', 'placeholder="contact@entreprise.sn"') +
+    '</div>' +
+    sel('Votre secteur ou besoin', 'objet', [
+      ['Pack B2C Détail', 'Pack B2C Détail'],
+      ['Complet Hybride B2B + B2C', 'Complet Hybride B2B + B2C'],
+      ['Flotte Camions & Registre Pannes', 'Flotte Camions & Registre Pannes'],
+      ['Démonstration personnalisée', 'Démonstration personnalisée'],
+      ['Autre question', 'Autre question']
+    ]) +
+    `<label class="block text-xs font-semibold text-slate-500">Votre message *
+      <textarea name="message" required rows="3" class="${INPUT} mt-1" placeholder="Indiquez ici vos questions ou le nombre de quincailleries / camions à paramétrer..."></textarea>
+    </label>`,
+    'Envoyer ma demande'
+  ));
+  if (prefillSubject) {
+    const s = document.querySelector('#modalBox select[name="objet"]');
+    if (s) s.value = prefillSubject;
+  }
+}
+
+function renderContact() {
+  const el = $('contact-box'); if (!el) return;
+  const t = CONTACT.tel.replace(/\D/g, ''), disp = t.replace(/(\d{2})(\d{3})(\d{2})(\d{2})/, '$1 $2 $3 $4');
+  el.innerHTML = `<div class="flex flex-col lg:flex-row items-center justify-between gap-6">
+    <div class="space-y-3 text-center lg:text-left">
+      <div class="inline-flex items-center space-x-2 bg-orange-500/20 text-orange-400 border border-orange-500/30 px-3 py-0.5 rounded-full text-xs font-bold">
+        <i class="fa-solid fa-headset"></i>
+        <span>Équipe Dédiée au Sénégal</span>
+      </div>
+      <h2 class="text-xl sm:text-2xl font-black text-white">Une question ? Besoin d’une démonstration ?</h2>
+      <p class="text-xs text-slate-300 max-w-xl leading-relaxed">
+        Notre équipe basée à Dakar vous accompagne pour paramétrer vos quincailleries, chantiers et camions. Contactez-nous par e-mail ou WhatsApp :
+      </p>
+      <div class="flex flex-wrap items-center justify-center lg:justify-start gap-2 pt-1">
+        <a href="mailto:${CONTACT.email}" class="inline-flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-orange-400 hover:text-orange-300 px-3.5 py-2 rounded-xl text-xs font-bold border border-slate-600 transition shadow-sm cursor-pointer" title="Nous écrire par e-mail">
+          <i class="fa-solid fa-envelope text-sm"></i>
+          <span class="underline">${CONTACT.email}</span>
+        </a>
+        <a href="https://wa.me/221${t}?text=Bonjour%20MargeUp,%20je%20souhaite%20des%20informations%20sur%20l'application" target="_blank" rel="noopener" class="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-3.5 py-2 rounded-xl text-xs font-bold transition shadow-sm cursor-pointer" title="Rejoindre directement sur WhatsApp">
+          <i class="fa-brands fa-whatsapp text-sm text-emerald-200"></i>
+          <span>Rejoindre sur WhatsApp</span>
+        </a>
+      </div>
+    </div>
+
+    <div class="flex flex-wrap items-center justify-center gap-3">
+      <a href="https://wa.me/221${t}?text=Bonjour%20MargeUp,%20je%20souhaite%20des%20informations%20sur%20l'application" target="_blank" rel="noopener" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-3 rounded-xl text-xs flex items-center space-x-2 transition shadow-lg shadow-emerald-600/30 cursor-pointer">
+        <i class="fa-brands fa-whatsapp text-base"></i>
+        <span>WhatsApp Direct</span>
+      </a>
+      <button type="button" onclick="openContactModal()" class="bg-yellow-400 hover:bg-yellow-300 text-slate-950 font-bold shadow-md px-4 py-3 rounded-xl text-xs flex items-center space-x-2 shadow-lg shadow-orange-500/30 transition cursor-pointer">
+        <i class="fa-solid fa-paper-plane"></i>
+        <span>Formulaire</span>
+      </button>
+      <a href="tel:+221${t}" class="bg-slate-800 hover:bg-slate-700 text-white border border-slate-600 font-bold px-4 py-3 rounded-xl text-xs flex items-center space-x-2 transition">
+        <i class="fa-solid fa-phone"></i>
+        <span>${disp}</span>
+      </a>
+    </div>
+  </div>`;
+}
+
+
+/* ---------- DIRECTION EN CONSULTATION SEULE (les saisies de l'équipe font foi) ---------- */
+const FIELD_FORMS = ['stock', 'dispatch', 'sale', 'fuel', 'trip', 'panne', 'expense', 'bat', 'batup'];
+const ro = () => !!S.co && curRole === 'ceo';
+function roNotice() { toast('La direction consulte seulement : les saisies sont faites par l’équipe (magasinier, transport, chef de chantier) pour garantir la transparence. Ajoutez des membres avec « Équipe ».'); }
+['openStockModal', 'openDispatchModal', 'openSaleModal', 'openFuelModal', 'openTripModal', 'openPanneModal', 'openExpenseModal', 'delExpense', 'openBatModal', 'openBatUpdate', 'delBat', 'delTruck'].forEach(n => {
+  const f = window[n]; if (typeof f === 'function') window[n] = function () { if (ro()) return roNotice(); return f.apply(this, arguments); };
+});
+
+/* Maintenance / Admin : retiré du code client. */
+
+/* ---------- DÉMARRAGE ---------- */
+document.addEventListener('submit', e => { const f = e.target.dataset && e.target.dataset.f; if (f && FORMS[f]) { e.preventDefault(); if (ro() && FIELD_FORMS.includes(f)) return roNotice(); const d = {}; new FormData(e.target).forEach((v, k) => { if (k.slice(-2) === '[]') (d[k] = d[k] || []).push(v); else d[k] = v; }); FORMS[f](d); } });
+window.onload = async function () {
+  try { const r = sessionStorage.getItem('safebtp.role'), mu = S.team.find(m => m.id === sessionStorage.getItem('safebtp.user')); if (r && r !== 'ceo' && ((mu && mu.role === r) || !S.co)) { curRole = r; curUser = mu || null; } } catch (e) {}
+  $('roleSelector').value = curRole;
+  changeRole(curRole); updatePricingCalculator(); renderAll(); applyPlanRestrictions();
+  // Accès maintenance désactivé
+  // Restauration d'arrière-plan résiliente depuis IndexedDB
+  await syncFromIndexedDB();
+};
+
+/* ---------- MENTIONS LÉGALES, POLITIQUE DE CONFIDENTIALITÉ (CDP SÉNÉGAL) & CGU ---------- */
+function openLegalModal(type) {
+  let title = '', content = '';
+
+  if (type === 'mentions') {
+    title = 'Mentions Légales';
+    content = `
+      <div class="space-y-4 text-xs text-slate-700 leading-relaxed">
+        <div class="bg-orange-50 border border-orange-200 rounded-xl p-3 text-orange-950 font-medium">
+          <p class="font-bold text-slate-900">Éditeur de la plateforme MargeUp</p>
+          <p>MargeUp est une solution numérique de gestion pour le BTP, le génie civil, la quincaillerie et le transport au Sénégal.</p>
+        </div>
+        <div>
+          <h4 class="font-bold text-slate-900 text-sm mb-1">1. Coordonnées de l'éditeur</h4>
+          <p><b>Éditeur :</b> Équipe MargeUp Sénégal</p>
+          <p><b>Siège d’activité :</b> Dakar, Sénégal</p>
+          <p><b>Contact e-mail :</b> <a href="mailto:${CONTACT.email}" class="text-orange-600 underline font-semibold">${CONTACT.email}</a></p>
+          <p><b>Téléphone / WhatsApp officiel :</b> <a href="tel:+221${CONTACT.tel.replace(/\D/g, '')}" class="text-orange-600 font-semibold">${CONTACT.tel}</a></p>
+        </div>
+        <div>
+          <h4 class="font-bold text-slate-900 text-sm mb-1">2. Hébergement technique</h4>
+          <p>L’application web et ses bases de données sécurisées sont hébergées par des prestataires d’infrastructures cloud certifiés assurant le chiffrement HTTPS/TLS et la haute disponibilité des données.</p>
+        </div>
+        <div>
+          <h4 class="font-bold text-slate-900 text-sm mb-1">3. Propriété intellectuelle</h4>
+          <p>L'ensemble des interfaces, codes sources, logos, graphismes et marques constituant la plateforme MargeUp sont la propriété exclusive de MargeUp. Toute reproduction ou distribution non autorisée est formellement interdite.</p>
+        </div>
+      </div>
+    `;
+  } else if (type === 'confidentialite') {
+    title = 'Politique de Confidentialité & Protection des Données (CDP Sénégal)';
+    content = `
+      <div class="space-y-4 text-xs text-slate-700 leading-relaxed">
+        <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-emerald-950">
+          <p class="font-bold text-emerald-900"><i class="fa-solid fa-shield-halved"></i> Conformité à la Loi n° 2008-12 du 25 janvier 2008</p>
+          <p class="mt-1">MargeUp s'engage à respecter scrupuleusement la réglementation sénégalaise sur la protection des données à caractère personnel et les directives de la <b>Commission des Données Personnelles du Sénégal (CDP)</b>.</p>
+        </div>
+
+        <div>
+          <h4 class="font-bold text-slate-900 text-sm mb-1">1. Données collectées</h4>
+          <p>MargeUp collecte uniquement les données strictement nécessaires au fonctionnement du service :</p>
+          <ul class="list-disc list-inside space-y-1 mt-1 pl-1">
+            <li><b>Données de l'entreprise :</b> Raison sociale, ville, adresse, numéro de téléphone, e-mail de contact.</li>
+            <li><b>Données des collaborateurs :</b> Noms, e-mails, numéros de téléphone et rôles attribués (Direction, Magasinier, Transport).</li>
+            <li><b>Données d'exploitation :</b> Ventes au comptoir, stocks, fiches véhicules, consommations de carburant, pannes et registres de voyages.</li>
+          </ul>
+        </div>
+
+        <div>
+          <h4 class="font-bold text-slate-900 text-sm mb-1">2. Finalités du traitement</h4>
+          <p>Les données sont traitées pour :</p>
+          <ul class="list-disc list-inside space-y-1 mt-1 pl-1">
+            <li>L’exécution du contrat de service (accès aux modules métiers, calcul des marges, factures PDF).</li>
+            <li>La gestion des accès sécurisés et l'isolation des données par entreprise (Row-Level Security).</li>
+            <li>L’assistance client et le support technique par nos conseillers au Sénégal.</li>
+          </ul>
+        </div>
+
+        <div>
+          <h4 class="font-bold text-slate-900 text-sm mb-1">3. Non-divulgation et confidentialité stricte</h4>
+          <p><b>Vos données restent votre propriété exclusive.</b> MargeUp ne commercialise, ne loue et ne cède aucune donnée personnelle ou commerciale à des tiers.</p>
+        </div>
+
+        <div>
+          <h4 class="font-bold text-slate-900 text-sm mb-1">4. Vos droits (Accès, Rectification, Suppression)</h4>
+          <p>Conformément à la Loi n° 2008-12, vous disposez d'un droit d’accès, de rectification, d'opposition et de suppression de vos données personnelles.</p>
+          <p class="mt-1">Pour exercer vos droits, contactez notre délégué à la protection des données par courriel à : <a href="mailto:${CONTACT.email}" class="text-orange-600 underline font-bold">${CONTACT.email}</a>.</p>
+          <p class="mt-1">Vous pouvez également saisir la <b>Commission des Données Personnelles (CDP) du Sénégal</b> : <a href="https://www.cdp.sn" target="_blank" rel="noopener" class="text-emerald-700 underline font-semibold">www.cdp.sn</a>.</p>
+        </div>
+      </div>
+    `;
+  } else if (type === 'cgu') {
+    title = 'Conditions Générales d’Utilisation (CGU)';
+    content = `
+      <div class="space-y-4 text-xs text-slate-700 leading-relaxed">
+        <div>
+          <h4 class="font-bold text-slate-900 text-sm mb-1">1. Objet du service</h4>
+          <p>MargeUp fournit une solution logicielle en mode SaaS destinée aux entreprises de BTP, aux transporteurs et aux exploitants de quincailleries au Sénégal.</p>
+        </div>
+
+        <div>
+          <h4 class="font-bold text-slate-900 text-sm mb-1">2. Essai gratuit de 15 jours</h4>
+          <p>Toute nouvelle entreprise bénéficie d’un essai gratuit de 15 jours sans engagement et sans saisie de carte bancaire, permettant de tester l'ensemble des modules.</p>
+        </div>
+
+        <div>
+          <h4 class="font-bold text-slate-900 text-sm mb-1">3. Abonnements et modalités de règlement</h4>
+          <p>À l'issue de l'essai gratuit, l'accès se prolonge via la souscription d'un abonnement mensuel ou annuel. Le paiement s'effectue par <b>transfert direct Wave ou Orange Money</b> vers le numéro marchand agréé. La validation de l'abonnement intervient après transmission de la référence de paiement SMS.</p>
+        </div>
+
+        <div>
+          <h4 class="font-bold text-slate-900 text-sm mb-1">4. Responsabilité de l'utilisateur</h4>
+          <p>Chaque utilisateur est responsable de la confidentialité de ses identifiants et de l'exactitude des données de terrain saisies (stocks, ventes, litrages de carburant).</p>
+        </div>
+
+        <div>
+          <h4 class="font-bold text-slate-900 text-sm mb-1">5. Droit applicable et juridiction compétente</h4>
+          <p>Les présentes CGU sont soumises au droit sénégalais. Tout litige relatif à leur interprétation ou exécution relève de la compétence des tribunaux de Dakar.</p>
+        </div>
+      </div>
+    `;
+  }
+
+  openModal(`
+    <div class="border-b border-slate-200 pb-3">
+      <h3 class="text-lg font-black text-slate-900">${title}</h3>
+      <p class="text-xs text-slate-500">MargeUp Sénégal · Conforme à la législation en vigueur</p>
+    </div>
+    <div class="py-3 max-h-[70vh] overflow-y-auto custom-scrollbar">
+      ${content}
+    </div>
+    <div class="flex justify-end pt-3 border-t border-slate-200">
+      <button type="button" onclick="closeModal()" class="px-5 py-2.5 rounded-xl text-xs bg-slate-900 hover:bg-slate-800 text-white font-bold cursor-pointer">
+        Fermer
+      </button>
+    </div>
+  `);
+}
+
+/* ---------- PORTAIL DE CONNEXION / INSCRIPTION DIRECTE (LANDING ➔ ERP) ---------- */
+function openAuthPhase(mode = 'login', plan = '') {
+  document.querySelectorAll('main > section').forEach(s => s.classList.add('hidden'));
+  const vAuth = $('view-auth');
+  if (vAuth) {
+    vAuth.classList.remove('hidden');
+  }
+  switchAuthTab(mode);
+  if (plan && $('signup-plan')) {
+    $('signup-plan').value = plan;
+  }
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function closeAuthPhase() {
+  const vAuth = $('view-auth');
+  if (vAuth) vAuth.classList.add('hidden');
+  switchTab(S.co ? (curRole || 'ceo') : 'accueil');
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function switchAuthTab(mode) {
+  const btnLogin = $('tab-btn-login');
+  const btnSignup = $('tab-btn-signup');
+  const formLogin = $('form-auth-login');
+  const formSignup = $('form-auth-signup');
+
+  if (mode === 'login') {
+    if (btnLogin) btnLogin.className = 'flex-1 py-2 rounded-xl text-xs font-bold transition bg-yellow-400 text-slate-950 cursor-pointer';
+    if (btnSignup) btnSignup.className = 'flex-1 py-2 rounded-xl text-xs font-bold transition text-slate-400 hover:text-white cursor-pointer';
+    if (formLogin) formLogin.classList.remove('hidden');
+    if (formSignup) formSignup.classList.add('hidden');
+  } else {
+    if (btnLogin) btnLogin.className = 'flex-1 py-2 rounded-xl text-xs font-bold transition text-slate-400 hover:text-white cursor-pointer';
+    if (btnSignup) btnSignup.className = 'flex-1 py-2 rounded-xl text-xs font-bold transition bg-yellow-400 text-slate-950 cursor-pointer';
+    if (formLogin) formLogin.classList.add('hidden');
+    if (formSignup) formSignup.classList.remove('hidden');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Authentification Supabase – Session, Connexion, Inscription, OTP & Rôles
+// ---------------------------------------------------------------------------
+
+/**
+ * Initialise la session utilisateur à partir de Supabase Auth et de me().
+ * Retourne un état explicite parmi :
+ * - 'success' : profil valide, rôle vérifié, accès ERP autorisé.
+ * - 'password_change_required' : session valide mais mot de passe à changer impérativement (accès ERP bloqué, aucun logout).
+ * - 'error' : session absente/invalide, échec me() ou rôle non autorisé.
+ */
+async function initUserSession(session) {
+  // Vérification de validité de session
+  if (!session || !session.user) {
+    await handleLogout(false);
+    return 'error';
+  }
+
+  const sb = getSupabase();
+  if (!sb) {
+    toast('Supabase non configuré.');
+    await handleLogout(false);
+    return 'error';
+  }
+
+  // 1️⃣ Appel RPC me() avec la session Supabase active
+  const { data: me, error: meErr } = await sb.rpc('me');
+  if (meErr || !me) {
+    const errMsg = 'Impossible de charger le profil : ' + (meErr?.message || 'Profil introuvable.');
+    toast(errMsg);
+    const errBox = $('login-error') || $('signup-error') || $('pwd-error');
+    if (errBox) errBox.textContent = errMsg;
+    await handleLogout(false);
+    return 'error';
+  }
+
+  // Vérification de présence de l’entreprise
+  if (!me.company || !me.company.id) {
+    const errMsg = 'Erreur : aucune entreprise associée à ce compte.';
+    toast(errMsg);
+    const errBox = $('login-error') || $('signup-error') || $('pwd-error');
+    if (errBox) errBox.textContent = errMsg;
+    await handleLogout(false);
+    return 'error';
+  }
+
+  // 2️⃣ Mise à jour de l’état global S à partir de me()
+  S.co = me.company || {};
+  if (S.co.name) S.co.nom = S.co.name;
+  if (S.co.email) S.co.email = S.co.email;
+  if (S.co.phone) S.co.tel = S.co.phone;
+  if (S.co.city) S.co.ville = S.co.city;
+
+  S.subscription = me.subscription || {};
+  S.features = me.features || {};
+
+  // 3️⃣ Rôle strict provenant exclusivement de me.role (vérifié avant tout accès et avant changement de mot de passe)
+  const roleMap = {
+    direction: 'ceo',
+    magasinier: 'magasinier',
+    transport: 'transport'
+  };
+  const role = roleMap[me.role];
+  if (!role) {
+    const errMsg = 'Erreur : rôle non autorisé ou inconnu (' + (me.role || 'aucun') + '). Accès à l’ERP refusé.';
+    toast(errMsg);
+    const errBox = $('login-error') || $('signup-error') || $('pwd-error');
+    if (errBox) errBox.textContent = errMsg;
+    await handleLogout(false);
+    return 'error';
+  }
+
+  // 4️⃣ Changement obligatoire de mot de passe
+  if (me.must_change_password) {
+    S.blocked = true;
+    toast('⚠️ Vous devez changer votre mot de passe avant de continuer.');
+    openPasswordChangeModal();
+    return 'password_change_required';
+  }
+
+  // Accès autorisé
+  S.blocked = false;
+  const vAuth = $('view-auth');
+  if (vAuth) vAuth.classList.add('hidden');
+
+  enterRole(role);
+  updateHeaderMode('erp');
+  switchTab(role);
+  applyPlanRestrictions();
+  toast('Connexion réussie · Espace ' + (ROLE_LABEL[role] || role) + ' ouvert !');
+  return 'success';
+}
+
+/**
+ * Connexion (login) – identifiant e‑mail OU numéro de téléphone.
+ * Normalisation : e-mail direct ou format serveur p<chiffres>@membres.margeup.invalid.
+ * Le rôle provient exclusivement de me().
+ */
+let _lastSignupEmail = '';
+let _resendCooldownSeconds = 0;
+let _resendInterval = null;
+
+function updateResendButtonsUI() {
+  const isCooldown = _resendCooldownSeconds > 0;
+  const buttons = [
+    { btn: $('signup-resend-btn'), text: $('signup-resend-btn-text') },
+    { btn: $('login-resend-btn'), text: $('login-resend-btn-text') }
+  ];
+
+  buttons.forEach(({ btn, text }) => {
+    if (!btn) return;
+    if (isCooldown) {
+      btn.disabled = true;
+      btn.classList.add('opacity-50', 'cursor-not-allowed');
+      btn.classList.remove('hover:bg-slate-700');
+      if (text) text.textContent = `Patienter (${_resendCooldownSeconds}s)...`;
+    } else {
+      btn.disabled = false;
+      btn.classList.remove('opacity-50', 'cursor-not-allowed');
+      btn.classList.add('hover:bg-slate-700');
+      if (text) text.textContent = btn.id === 'signup-resend-btn' ? 'Renvoyer le code de confirmation' : 'Renvoyer le lien de confirmation';
+    }
+  });
+}
+
+function startResendCooldown(seconds = 60) {
+  _resendCooldownSeconds = seconds;
+  updateResendButtonsUI();
+  if (_resendInterval) clearInterval(_resendInterval);
+  _resendInterval = setInterval(() => {
+    _resendCooldownSeconds--;
+    if (_resendCooldownSeconds <= 0) {
+      clearInterval(_resendInterval);
+      _resendInterval = null;
+      _resendCooldownSeconds = 0;
+    }
+    updateResendButtonsUI();
+  }, 1000);
+}
+
+/**
+ * Renvoyer l'e-mail de vérification Supabase pour un compte non encore validé.
+ * Précaution 2 : Distingue bien l'acceptation de la demande par Supabase de la livraison effective de l'e-mail.
+ * Le lien revient à l’adresse depuis laquelle l’application est ouverte.
+ */
+function getAuthRedirectUrl() {
+  // Reprend l'adresse actuelle de l'application (localhost, réseau local ou site hébergé).
+  return new URL(window.location.pathname, window.location.origin).href;
+}
+
+async function handleResendConfirmation(email, statusElId) {
+  const statusEl = $(statusElId);
+  if (statusEl) {
+    statusEl.textContent = '';
+    statusEl.className = 'text-[11px] font-medium min-h-[14px]';
+  }
+
+  const cleanEmail = (email || '').trim().toLowerCase();
+  if (!cleanEmail || !cleanEmail.includes('@')) {
+    const msg = 'Veuillez renseigner une adresse e-mail valide.';
+    if (statusEl) {
+      statusEl.className = 'text-[11px] text-rose-400 font-medium min-h-[14px]';
+      statusEl.textContent = msg;
+    }
+    toast(msg);
+    return;
+  }
+
+  if (_resendCooldownSeconds > 0) {
+    toast(`Veuillez patienter ${_resendCooldownSeconds}s avant une nouvelle demande.`);
+    return;
+  }
+
+  const sb = getSupabase();
+  if (!sb) {
+    const msg = 'Supabase non configuré.';
+    if (statusEl) {
+      statusEl.className = 'text-[11px] text-rose-400 font-medium min-h-[14px]';
+      statusEl.textContent = msg;
+    }
+    toast(msg);
+    return;
+  }
+
+  const buttons = [$('signup-resend-btn'), $('login-resend-btn')];
+  buttons.forEach(b => { if (b) { b.disabled = true; b.classList.add('opacity-50'); } });
+  if (statusEl) {
+    statusEl.className = 'text-[11px] text-slate-400 font-medium min-h-[14px]';
+    statusEl.textContent = 'Envoi de la demande à Supabase...';
+  }
+
+  const emailRedirectTo = getAuthRedirectUrl();
+
+  const { data, error } = await sb.auth.resend({
+    type: 'signup',
+    email: cleanEmail,
+    options: {
+      emailRedirectTo
+    }
+  });
+
+  buttons.forEach(b => { if (b) { b.disabled = false; b.classList.remove('opacity-50'); } });
+
+  if (error) {
+    let errText = error.message || 'Erreur lors de la demande de renvoi.';
+    const lower = errText.toLowerCase();
+    const isRateLimited = error.status === 429 ||
+                          lower.includes('rate limit') ||
+                          lower.includes('security purposes') ||
+                          lower.includes('over_email_send_rate_limit');
+
+    if (isRateLimited) {
+      errText = 'Limite d’envoi atteinte : pour des raisons de sécurité, veuillez patienter 60 secondes avant de redemander un code.';
+      startResendCooldown(60);
+    }
+
+    if (statusEl) {
+      statusEl.className = 'text-[11px] text-rose-400 font-medium min-h-[14px]';
+      statusEl.textContent = errText;
+    }
+    toast(errText);
+    return;
+  }
+
+  // Succès de la demande :
+  // Précaution 2 : Préciser expressément que l'acceptation de la demande par Supabase ne garantit pas la livraison finale dans la boîte de réception.
+  startResendCooldown(60);
+
+  const successHtml = `
+    <span class="text-emerald-400 font-bold block mb-1">✓ Demande de renvoi acceptée par Supabase.</span>
+    <span class="text-slate-300">
+      Un nouvel e-mail de vérification a été demandé pour <strong class="text-white">${esc(cleanEmail)}</strong>. Il contiendra un code à 6 chiffres si le modèle OTP est activé dans Supabase.<br>
+      <em>Note : l'acceptation de la demande par le serveur confirme sa prise en compte mais ne garantit pas la livraison finale dans votre boîte de réception. Pensez à vérifier vos dossiers Courriers indésirables / Spams.</em>
+    </span>
+  `;
+
+  if (statusEl) {
+    statusEl.className = 'text-[11px] text-left p-2.5 rounded-lg bg-emerald-950/40 border border-emerald-500/40 font-medium mt-1';
+    statusEl.innerHTML = successHtml;
+  }
+  toast('Demande de renvoi acceptée par Supabase.');
+}
+
+async function handleSignupOtpVerify(e) {
+  e.preventDefault();
+  const statusEl = $('signup-otp-status');
+  const verifyBtn = $('signup-otp-verify-btn');
+  const tokenInput = $('signup-confirmation-token');
+  const email = (_lastSignupEmail || $('signup-email')?.value || '').trim().toLowerCase();
+  const token = (tokenInput?.value || '').replace(/\s/g, '');
+  const setStatus = (message, isError = false) => {
+    if (!statusEl) return;
+    statusEl.className = `text-[11px] font-medium min-h-[14px] ${isError ? 'text-rose-400' : 'text-slate-400'}`;
+    statusEl.textContent = message;
+  };
+
+  if (!email || !email.includes('@')) {
+    setStatus('Adresse e-mail introuvable. Recommencez l’inscription.', true);
+    return;
+  }
+  if (!/^\d{6}$/.test(token)) {
+    setStatus('Saisissez les 6 chiffres reçus par e-mail.', true);
+    tokenInput?.focus();
+    return;
+  }
+
+  const sb = getSupabase();
+  if (!sb) {
+    setStatus('Supabase n’est pas configuré.', true);
+    return;
+  }
+
+  if (verifyBtn) verifyBtn.disabled = true;
+  setStatus('Vérification du code…');
+  try {
+    const { data, error } = await sb.auth.verifyOtp({ email, token, type: 'signup' });
+    if (error) {
+      setStatus(error.message || 'Code invalide ou expiré. Demandez un nouveau code.', true);
+      return;
+    }
+    if (tokenInput) tokenInput.value = '';
+    setStatus('Adresse confirmée. Ouverture de votre espace…');
+    if (data?.session) {
+      await handleSessionAuth(data.session);
+    } else {
+      setStatus('Code accepté, mais aucune session reçue. Connectez-vous avec votre adresse et votre mot de passe.', true);
+    }
+  } catch (error) {
+    console.error('[MargeUp] Erreur de vérification OTP:', error);
+    setStatus('Impossible de vérifier ce code. Réessayez.', true);
+  } finally {
+    if (verifyBtn) verifyBtn.disabled = false;
+  }
+}
+
+function triggerResendFromSignup() {
+  const email = ($('signup-email')?.value || _lastSignupEmail || '').trim();
+  handleResendConfirmation(email, 'signup-resend-status');
+}
+
+function triggerResendFromLogin() {
+  const ident = ($('login-identifier')?.value || '').trim();
+  handleResendConfirmation(ident, 'login-resend-status');
+}
+
+async function handleSupabaseLogin(e) {
+  e.preventDefault();
+  const ident = ($('login-identifier')?.value || '').trim();
+  const password = $('login-password')?.value || '';
+  const errBox = $('login-error');
+  const loginResendBox = $('login-resend-box');
+  const loginResendStatus = $('login-resend-status');
+  if (errBox) errBox.textContent = '';
+  if (loginResendBox) loginResendBox.classList.add('hidden');
+  if (loginResendStatus) {
+    loginResendStatus.textContent = '';
+    loginResendStatus.className = 'text-[11px] font-medium min-h-[14px]';
+  }
+
+  if (!ident || !password) {
+    if (errBox) errBox.textContent = 'Identifiant et mot de passe requis.';
+    return;
+  }
+
+  const sb = getSupabase();
+  if (!sb) {
+    if (errBox) errBox.textContent = 'Supabase non configuré.';
+    return;
+  }
+
+  // Normalisation du téléphone au format serveur p<digits>@membres.margeup.invalid
+  const email = ident.includes('@')
+    ? ident.toLowerCase()
+    : `p${ident.replace(/\D/g, '')}@membres.margeup.invalid`;
+
+  const { data, error: signInErr } = await sb.auth.signInWithPassword({ email, password });
+  if (signInErr) {
+    const errMsg = signInErr.message || '';
+    if (errBox) errBox.textContent = errMsg;
+    toast(errMsg);
+
+    // Détection d'un compte non confirmé
+    const lowerMsg = errMsg.toLowerCase();
+    const isUnconfirmed = lowerMsg.includes('not confirmed') ||
+                          lowerMsg.includes('non confirmé') ||
+                          signInErr.code === 'email_not_confirmed';
+    if (isUnconfirmed && ident.includes('@')) {
+      if (loginResendBox) loginResendBox.classList.remove('hidden');
+    }
+    return;
+  }
+
+  if ($('login-password')) $('login-password').value = '';
+
+  const status = await initUserSession(data.session);
+  if (status === 'error') {
+    // initUserSession a affiché l'erreur et nettoyé l'état via handleLogout(false)
+    return;
+  }
+}
+
+/**
+ * Inscription : crée l’utilisateur Supabase Auth avec e-mail et mot de passe,
+ * transmet les métadonnées de l'entreprise dans options.data et configure emailRedirectTo.
+ * Le mot de passe n'est JAMAIS inclus dans options.data ni conservé en variable globale.
+ */
+async function handleSupabaseSignup(e) {
+  e.preventDefault();
+  const name = ($('signup-nom')?.value || '').trim();
+  const manager = ($('signup-resp')?.value || '').trim();
+  const city = ($('signup-ville')?.value || '').trim();
+  const phone = ($('signup-tel')?.value || '').trim();
+  const email = ($('signup-email')?.value || '').trim().toLowerCase();
+  const password = $('signup-pw')?.value || '';
+  const planRaw = ($('signup-plan')?.value || 'all');
+  const errBox = $('signup-error');
+  if (errBox) errBox.textContent = '';
+
+  if (!name || !manager || !email.includes('@') || phone.replace(/\D/g, '').length < 9) {
+    if (errBox) errBox.textContent = 'Nom de l’entreprise, responsable, e-mail et téléphone valides (min. 9 chiffres) sont obligatoires.';
+    return;
+  }
+  if (password.length < 4) {
+    if (errBox) errBox.textContent = 'Le mot de passe doit comporter au moins 4 caractères.';
+    return;
+  }
+
+  const sb = getSupabase();
+  if (!sb) {
+    if (errBox) errBox.textContent = 'Supabase non configuré.';
+    return;
+  }
+
+  // Mapping strict de la formule d'abonnement
+  const planMap = {
+    'all': 'tout_en_un',
+    'tout_en_un': 'tout_en_un',
+    'hybrid_b2b_b2c': 'hybride',
+    'hybride': 'hybride',
+    'b2c_retail': 'detail',
+    'detail': 'detail',
+    'fleet_custom': 'flotte',
+    'flotte': 'flotte',
+    'entreprise': 'entreprise'
+  };
+  const plan = planMap[planRaw] || 'tout_en_un';
+
+  const emailRedirectTo = getAuthRedirectUrl();
+
+  // Inscription Supabase Auth : métadonnées transmises dans options.data
+  const { data, error: signErr } = await sb.auth.signUp({
+    email,
+    password,
+    options: {
+      emailRedirectTo,
+      data: {
+        company_name: name,
+        manager_name: manager,
+        city,
+        phone,
+        plan
+      }
+    }
+  });
+
+  if (signErr) {
+    if (errBox) errBox.textContent = signErr.message;
+    toast(signErr.message);
+    return;
+  }
+
+  // Effacer le mot de passe du champ et ne JAMAIS le stocker
+  if ($('signup-pw')) $('signup-pw').value = '';
+  _lastSignupEmail = email;
+
+  // Affichage du message de confirmation d'e-mail et masquage du bouton de soumission
+  const confirmBox = $('signup-confirmation-sent');
+  const confirmMsg = $('signup-confirmation-message');
+  if (confirmBox) confirmBox.classList.remove('hidden');
+
+  const submitBtn = e.target.querySelector('button[type="submit"]');
+  if (submitBtn) submitBtn.classList.add('hidden');
+
+  // Supabase Auth : lorsque l'inscription est répétée pour un compte existant,
+  // data.user est retourné avec un tableau identities vide ([]).
+  const isRepeatedSignup = data?.user && Array.isArray(data.user.identities) && data.user.identities.length === 0;
+
+  if (isRepeatedSignup) {
+    // Précaution 1 : Proposition de renvoi sans révéler inutilement si l'adresse possède déjà un compte
+    if (confirmMsg) {
+      confirmMsg.innerHTML = `
+        Vérification requise : si une inscription est déjà en cours pour cette adresse, demandez un nouveau code de confirmation ci-dessous.<br>
+        <strong>Saisissez ensuite les 6 chiffres reçus par e-mail.</strong>
+      `;
+    }
+    toast('Vérification requise : vous pouvez demander le renvoi du code.');
+  } else {
+    if (confirmMsg) {
+      confirmMsg.innerHTML = `
+        Un e-mail de confirmation vient de vous être envoyé.<br>
+        <strong>Saisissez le code à 6 chiffres</strong> reçu par e-mail pour valider votre compte et créer automatiquement votre espace d'entreprise.
+      `;
+    }
+    toast('E-mail de confirmation envoyé à ' + email + ' !');
+  }
+}
+
+/**
+ * Affiche l’écran de changement de mot de passe obligatoire.
+ */
+function openPasswordChangeModal() {
+  openModal(`
+    <div class="space-y-4">
+      <div class="flex items-center space-x-3 text-amber-600">
+        <i class="fa-solid fa-key text-xl"></i>
+        <h3 class="text-base font-bold text-slate-900">Changement obligatoire de mot de passe</h3>
+      </div>
+      <p class="text-xs text-slate-600">Votre mot de passe doit être modifié avant de pouvoir accéder à votre espace de travail.</p>
+      <form onsubmit="handlePasswordChangeSubmit(event)" class="space-y-3">
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">Nouveau mot de passe *</label>
+          <input id="pwd-new" type="password" required minlength="6" placeholder="Au moins 6 caractères" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs text-slate-900 focus:outline-none focus:border-yellow-400">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">Confirmer le nouveau mot de passe *</label>
+          <input id="pwd-confirm" type="password" required minlength="6" placeholder="Confirmez le mot de passe" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs text-slate-900 focus:outline-none focus:border-yellow-400">
+        </div>
+        <div id="pwd-error" class="text-xs text-rose-500 font-semibold min-h-[16px]"></div>
+        <div class="flex justify-end gap-2 pt-2">
+          <button type="button" onclick="handleLogout()" class="px-4 py-2 rounded-xl text-xs bg-slate-100 text-slate-600 hover:bg-slate-200">Déconnexion</button>
+          <button type="submit" class="px-4 py-2 rounded-xl text-xs bg-yellow-400 text-slate-950 font-bold hover:bg-yellow-300">Enregistrer</button>
+        </div>
+      </form>
+    </div>
+  `);
+}
+
+/**
+ * Traitement du formulaire de changement de mot de passe obligatoire.
+ */
+async function handlePasswordChangeSubmit(e) {
+  e.preventDefault();
+  const pwd1 = $('pwd-new')?.value || '';
+  const pwd2 = $('pwd-confirm')?.value || '';
+  const errBox = $('pwd-error');
+
+  if (!pwd1 || pwd1.length < 6) {
+    if (errBox) errBox.textContent = 'Le mot de passe doit comporter au moins 6 caractères.';
+    return;
+  }
+  if (pwd1 !== pwd2) {
+    if (errBox) errBox.textContent = 'Les deux mots de passe ne correspondent pas.';
+    return;
+  }
+
+  const sb = getSupabase();
+  if (!sb) {
+    if (errBox) errBox.textContent = 'Supabase non configuré.';
+    return;
+  }
+
+  // 1️⃣ Mise à jour auth.updateUser
+  const { error: updErr } = await sb.auth.updateUser({ password: pwd1 });
+  if (updErr) {
+    if (errBox) errBox.textContent = updErr.message;
+    toast(updErr.message);
+    return;
+  }
+
+  // 2️⃣ Validation RPC côté serveur complete_password_change
+  const { error: rpcErr } = await sb.rpc('complete_password_change');
+  if (rpcErr) {
+    if (errBox) errBox.textContent = rpcErr.message;
+    toast(rpcErr.message);
+    return;
+  }
+
+  // 3️⃣ Récupération sécurisée de la session active
+  const { data: { session }, error: sessErr } = await sb.auth.getSession();
+  if (sessErr || !session) {
+    if (errBox) errBox.textContent = 'Session introuvable après mise à jour. Veuillez vous reconnecter.';
+    toast('Erreur de session. Veuillez vous reconnecter.');
+    await handleLogout(false);
+    return;
+  }
+
+  // 4️⃣ Validation du profil et autorisation d’accès ERP
+  const status = await initUserSession(session);
+  if (status === 'success') {
+    closeModal();
+    toast('Mot de passe mis à jour avec succès !');
+  } else if (status === 'password_change_required') {
+    if (errBox) errBox.textContent = 'Le changement de mot de passe n’a pas encore été validé par le serveur.';
+    toast('Veuillez renouveler l’opération.');
+  } else {
+    // status === 'error' : initUserSession a déjà affiché l'erreur et nettoyé l'état via handleLogout(false)
+    closeModal();
+  }
+}
+
+/**
+ * Réinitialise l’état applicatif local sans émettre de toast ni appeler signOut.
+ * Garantit qu’aucun ancien état ERP ne reste accessible lorsqu’une session est absente ou invalide.
+ */
+function clearLocalState() {
+  S = {};
+  curUser = null;
+  curRole = null;
+  try {
+    sessionStorage.removeItem('safebtp.role');
+    sessionStorage.removeItem('safebtp.user');
+  } catch (e) {}
+
+  const vAuth = $('view-auth');
+  if (vAuth) vAuth.classList.remove('hidden');
+  updateHeaderMode('landing');
+  switchTab('accueil');
+}
+
+let _isLoggingOut = false;
+
+/**
+ * Déconnexion – vide l’état local complet et appelle signOut() si demandé.
+ * Le paramètre triggerSignOut évite les boucles lors de l’événement SIGNED_OUT.
+ */
+async function handleLogout(triggerSignOut = true) {
+  if (_isLoggingOut) return;
+  _isLoggingOut = true;
+  try {
+    if (triggerSignOut) {
+      const sb = getSupabase();
+      if (sb) {
+        try { await sb.auth.signOut(); } catch (e) {}
+      }
+    }
+    clearLocalState();
+    toast('Déconnecté.');
+  } finally {
+    _isLoggingOut = false;
+  }
+}
+
+let _authListenerRegistered = false;
+let _isProcessingAuth = false;
+
+/**
+ * Traite une session Supabase active :
+ * 1. Vérifie si l'entreprise existe déjà via me().
+ * 2. Si aucune entreprise n'est associée, crée l'entreprise via create_company avec les métadonnées d'inscription.
+ * 3. Charge le profil et ouvre l'ERP via initUserSession().
+ */
+async function handleSessionAuth(session) {
+  if (!session || !session.user) {
+    clearLocalState();
+    return;
+  }
+  if (_isProcessingAuth) return;
+  _isProcessingAuth = true;
+
+  try {
+    const sb = getSupabase();
+    if (!sb) {
+      clearLocalState();
+      return;
+    }
+
+    // 1️⃣ Contrôle préalable : l'entreprise existe-t-elle déjà ?
+    const { data: me, error: meErr } = await sb.rpc('me');
+
+    if (!meErr && me && me.company && me.company.id) {
+      // L'entreprise existe déjà : entrée directe dans l'ERP
+      await initUserSession(session);
+      return;
+    }
+
+    // 2️⃣ Aucune entreprise trouvée : vérification des métadonnées d'inscription
+    const meta = session.user.user_metadata || {};
+    const companyName = meta.company_name;
+    const managerName = meta.manager_name;
+    const city = meta.city || 'Dakar';
+    const phone = meta.phone || '';
+    const plan = meta.plan || 'tout_en_un';
+
+    if (companyName && managerName) {
+      // Création de l'entreprise via create_company
+      const { data: newCo, error: createErr } = await sb.rpc('create_company', {
+        p_name: companyName,
+        p_manager: managerName,
+        p_city: city,
+        p_phone: phone,
+        p_email: session.user.email,
+        p_plan: plan,
+        p_units: 1
+      });
+
+      if (createErr) {
+        console.error('[MargeUp] Erreur create_company:', createErr);
+        toast('Erreur création entreprise : ' + createErr.message);
+        // Si l'entreprise existait déjà côté base, tentative d'initialisation du profil
+        await initUserSession(session);
+        return;
+      }
+
+      toast('Entreprise créée avec succès ! Bienvenue sur MargeUp.');
+      await initUserSession(session);
+      return;
+    }
+
+    // Si aucune métadonnée d'inscription n'est disponible et que me() a échoué
+    await initUserSession(session);
+  } finally {
+    _isProcessingAuth = false;
+  }
+}
+
+/**
+ * Restauration de session au chargement de la page.
+ * Gère le retour du lien de confirmation Supabase et la session active.
+ */
+async function restoreSession() {
+  const sb = getSupabase();
+  if (!sb) {
+    clearLocalState();
+    return;
+  }
+
+  try {
+    const { data, error } = await sb.auth.getSession();
+    const session = data?.session;
+    if (error || !session) {
+      // Aucune session existante ou erreur getSession
+      clearLocalState();
+    } else {
+      await handleSessionAuth(session);
+    }
+  } catch (e) {
+    console.warn('[MargeUp] Erreur restauration session:', e);
+    clearLocalState();
+  }
+
+  // Écoute explicite des événements Supabase Auth (enregistrée une seule fois)
+  if (!_authListenerRegistered) {
+    _authListenerRegistered = true;
+    sb.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_OUT') {
+        handleLogout(false);
+      } else if (event === 'SIGNED_IN' && session) {
+        // Validation du lien e-mail ou connexion réussie
+        if (!S.co || !S.co.id) {
+          await handleSessionAuth(session);
+        }
+      }
+    });
+  }
+}
+
+// Restauration automatique au chargement
+restoreSession();
+
+function updateHeaderMode(mode) {
+  const hLanding = $('header-landing');
+  const hErp = $('header-erp');
+  const navErp = $('nav-erp-tabs');
+  const subTitle = $('erp-co-subtitle');
+
+  if (mode === 'erp') {
+    if (hLanding) hLanding.classList.add('hidden');
+    if (hErp) hErp.classList.remove('hidden');
+    if (navErp) navErp.classList.remove('hidden');
+    if (subTitle && S.co) {
+      subTitle.textContent = S.co.nom + (S.co.ville ? ' · ' + S.co.ville : '');
+    }
+  } else {
+    if (hLanding) hLanding.classList.remove('hidden');
+    if (hErp) hErp.classList.add('hidden');
+    if (navErp) navErp.classList.add('hidden');
+  }
+}
+
+async function logoutERP() {
+  await handleLogout();
+}
+
