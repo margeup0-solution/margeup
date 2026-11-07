@@ -517,6 +517,7 @@ function importBackup() {
   inp.click();
 }
 let S = load(), selChantier = null, calc = null, payMe = 'w', c1 = null, c2 = null, curRole = 'ceo', pendingRole = null, curUser = null, selDepot = null;
+let activeAuthRole = null, activeAuthName = '';
 const scoped = (type, list) => (!curUser || curUser.scope.type !== type || curUser.scope.id === 'all') ? list : list.filter(x => String(x.id) === String(curUser.scope.id));
 const scopeChantiers = () => scoped('chantier', S.chantiers), scopeDepots = () => scoped('depot', S.depots), scopeFleet = () => scoped('truck', S.fleet);
 const scopeLabel = m => m.scope.type === 'chantier' ? 'Admin du chantier ' + ((S.chantiers.find(c => c.id === m.scope.id) || {}).nom || '?').replace('Chantier ', '') : m.scope.type === 'depot' ? 'Admin de ' + ((S.depots.find(d => d.id === m.scope.id) || {}).nom || '?') : m.scope.id === 'all' ? 'Admin de toute la flotte' : 'Admin du camion ' + ((S.fleet.find(f => String(f.id) === String(m.scope.id)) || {}).plate || '?');
@@ -553,25 +554,42 @@ function fillLock() {
 
 /* ---------- RESTRICTION DES FONCTIONNALITÉS SELON LE PLAN CHOISI ---------- */
 function applyPlanRestrictions() {
-  const plan = (S.sub && S.sub.plan) || (S.trial && S.trial.plan) || (S.co && S.co.plan) || 'all';
+  const authenticated = !!activeAuthRole;
+  const features = S.features || {};
+  const plan = (S.subscription && S.subscription.plan) || (S.sub && S.sub.plan) || (S.trial && S.trial.plan) || (S.co && S.co.plan) || 'all';
+  const planFeatures = {
+    detail: { stock: true, retail: true }, b2c_retail: { stock: true, retail: true }, quincaillerie: { stock: true, retail: true },
+    hybride: { stock: true, retail: true, wholesale: true }, hybrid_b2b_b2c: { stock: true, retail: true, wholesale: true },
+    flotte: { fleet: true }, fleet: { fleet: true }, fleet_custom: { fleet: true }, transport: { fleet: true },
+    tout_en_un: { stock: true, retail: true, wholesale: true, fleet: true, chantiers: true },
+    entreprise: { stock: true, retail: true, wholesale: true, fleet: true, chantiers: true }, all: { stock: true, retail: true, wholesale: true, fleet: true, chantiers: true }
+  };
+  const fallback = planFeatures[plan] || {};
+  const hasFeature = key => authenticated ? features[key] === true : fallback[key] === true;
   const tabMagasinier = $('tab-magasinier');
   const tabTransport = $('tab-transport');
+  if (tabMagasinier) tabMagasinier.classList.toggle('hidden', !hasFeature('stock') || !(curRole === 'ceo' || curRole === 'magasinier'));
+  if (tabTransport) tabTransport.classList.toggle('hidden', !hasFeature('fleet') || !(curRole === 'ceo' || curRole === 'transport'));
+  document.querySelectorAll('.feature-stock').forEach(el => el.classList.toggle('hidden', !hasFeature('stock')));
+  document.querySelectorAll('.feature-fleet').forEach(el => el.classList.toggle('hidden', !hasFeature('fleet')));
+  document.querySelectorAll('.feature-wholesale').forEach(el => el.classList.toggle('hidden', !hasFeature('wholesale')));
+}
 
-  if (plan === 'b2c_retail' || plan === 'hybrid_b2b_b2c' || plan === 'quincaillerie') {
-    if (tabTransport) tabTransport.classList.add('hidden');
-    if (tabMagasinier && (curRole === 'ceo' || curRole === 'magasinier')) tabMagasinier.classList.remove('hidden');
-  } else if (plan === 'fleet' || plan === 'fleet_custom' || plan === 'transport') {
-    if (tabMagasinier) tabMagasinier.classList.add('hidden');
-    if (tabTransport && (curRole === 'ceo' || curRole === 'transport')) tabTransport.classList.remove('hidden');
-  } else {
-    // Pack tout-en-un / All
-    if (tabMagasinier && (curRole === 'ceo' || curRole === 'magasinier')) tabMagasinier.classList.remove('hidden');
-    if (tabTransport && (curRole === 'ceo' || curRole === 'transport')) tabTransport.classList.remove('hidden');
-  }
+function hasPackFeature(feature) {
+  if (activeAuthRole) return !!S.features && S.features[feature] === true;
+  const plan = (S.sub && S.sub.plan) || (S.trial && S.trial.plan) || (S.co && S.co.plan) || 'all';
+  const map = { detail: ['stock','retail'], b2c_retail: ['stock','retail'], quincaillerie: ['stock','retail'], hybride: ['stock','retail','wholesale'], hybrid_b2b_b2c: ['stock','retail','wholesale'], flotte: ['fleet'], fleet: ['fleet'], fleet_custom: ['fleet'], transport: ['fleet'], tout_en_un: ['stock','retail','wholesale','fleet','chantiers'], entreprise: ['stock','retail','wholesale','fleet','chantiers'], all: ['stock','retail','wholesale','fleet','chantiers'] };
+  return (map[plan] || []).includes(feature);
 }
 
 /* ---------- NAVIGATION ET RÔLES ---------- */
 function switchTab(tabId) {
+  const featureByTab = { magasinier: 'stock', transport: 'fleet' };
+  if (activeAuthRole && (tabId === 'ceo' && activeAuthRole !== 'ceo' || tabId === 'magasinier' && !['ceo','magasinier'].includes(activeAuthRole) || tabId === 'transport' && !['ceo','transport'].includes(activeAuthRole))) {
+    toast('Cette page ne correspond pas à votre compte.');
+    return;
+  }
+  if (featureByTab[tabId] && !hasPackFeature(featureByTab[tabId])) { toast('Cette fonctionnalité n’est pas incluse dans votre formule.'); return; }
   if (tabId === 'tarifs' && S.co && curRole !== 'ceo') { toast('Les tarifs sont réservés au patron (rôle CEO).'); return; }
   let view = tabId;
   if (GATED.includes(tabId) && !canUse()) { view = 'locked'; fillLock(); }
@@ -604,6 +622,7 @@ function switchTab(tabId) {
 function switchRoleAndTab(role) { goModule(role); }
 function goModule(role) { if (curRole === 'ceo' || curRole === role) switchTab(role); else requestRole(role, () => switchTab(role)); }
 function changeRole(role) {
+  if (activeAuthRole && role !== activeAuthRole) role = activeAuthRole;
   document.querySelectorAll('.role-restricted').forEach(b => b.classList.toggle('hidden', !(role === 'ceo' || b.classList.contains('role-' + role))));
   const employe = !!S.co && role !== 'ceo'; // les tarifs sont réservés au patron (les visiteurs les voient)
   document.querySelectorAll('.ceo-only').forEach(b => b.classList.toggle('hidden', employe));
@@ -628,6 +647,7 @@ function enterRole(role) {
     handleLogout();
     return;
   }
+  if (activeAuthRole && role !== activeAuthRole) { toast('Le rôle est défini par votre compte.'); return; }
   curRole = role; try { sessionStorage.setItem('safebtp.role', role); } catch (e) {}
   if (role === 'ceo') { curUser = null; try { sessionStorage.setItem('safebtp.user', ''); } catch (e) {} }
   if ($('roleSelector')) $('roleSelector').value = role;
@@ -635,6 +655,11 @@ function enterRole(role) {
   renderAll();
 }
 function requestRole(role, cb) {
+  if (activeAuthRole) {
+    if (role !== activeAuthRole) return toast('Chaque membre doit utiliser son propre compte pour ouvrir son espace.');
+    if (cb) cb();
+    return;
+  }
   const rs = $('roleSelector');
   if (role === 'ceo' || role === curRole || !S.co) { enterRole(role); if (cb) cb(); return; } // le patron et les visiteurs n'ont pas de mot de passe
   rs.value = curRole;
@@ -1764,6 +1789,9 @@ function renderAll() {
   if (coBtn) {
     coBtn.innerHTML = `<i class="fa-solid fa-building text-orange-600"></i> ${esc(S.co ? S.co.nom : 'Créer mon espace')}`;
   }
+  const employeeIdentity = $('employeeIdentity');
+  if (employeeIdentity) employeeIdentity.textContent = activeAuthName || curUser?.nom || S.co?.nom || '';
+  document.querySelectorAll('.employee-only').forEach(el => el.classList.toggle('hidden', !activeAuthRole || activeAuthRole === 'ceo'));
   updateSyncIndicator();
   try { renderBanner(); } catch (e) { console.warn('renderBanner', e); }
   try { renderDemoBar(); } catch (e) { console.warn('renderDemoBar', e); }
@@ -2124,10 +2152,12 @@ const FORMS = {
 /* ---------- VENTES (DÉTAIL ET GROS) ET FACTURES ---------- */
 const PAYS = ['Espèces', 'Wave', 'Orange Money', 'Crédit'];
 function openSaleModal() {
+  if (!hasPackFeature('retail')) return toast('La vente au détail n’est pas incluse dans votre formule.');
   if (!S.inventory.some(i => i.depot === selDepot)) return toast('Ajoutez d’abord des articles à cette quincaillerie');
   const dp = S.depots.find(d => d.id === selDepot) || {};
+  const saleTypes = [['detail', 'Détail']]; if (hasPackFeature('wholesale')) saleTypes.push(['gros', 'Gros']);
   openModal(`<h3 class="text-base font-bold text-slate-900">Nouvelle vente · ${esc(dp.nom || '')}</h3><form data-f="sale" class="space-y-3">
-    <div class="grid grid-cols-2 gap-3">${sel('Type de vente', 'stype', [['detail', 'Détail'], ['gros', 'Gros']]).replace('<select', '<select onchange="saleType()"')}${sel('Type de client', 'kind', [['particulier', 'Particulier (population)'], ['entreprise', 'Entreprise']])}${fld('Nom du client', 'cnom', 'text', 'placeholder="Client comptoir"')}${fld('Téléphone (facultatif)', 'ctel', 'tel')}</div>
+    <div class="grid grid-cols-2 gap-3">${sel('Type de vente', 'stype', saleTypes).replace('<select', '<select onchange="saleType()"')}${sel('Type de client', 'kind', [['particulier', 'Particulier (population)'], ['entreprise', 'Entreprise']])}${fld('Nom du client', 'cnom', 'text', 'placeholder="Client comptoir"')}${fld('Téléphone (facultatif)', 'ctel', 'tel')}</div>
     ${sel('Paiement', 'pay', PAYS.map(p => [p, p]))}
     <div id="saleRows" class="space-y-2"></div>
     <button type="button" onclick="addSaleRow()" class="text-xs text-orange-700 font-bold">+ Ajouter un article</button>
@@ -2212,12 +2242,82 @@ function shareInvoice(id) {
 }
 
 /* ---------- ÉQUIPE : ADMINS PAR CHANTIER, QUINCAILLERIE ET CAMION ---------- */
-function openTeamModal() {
+let managedMembers = [];
+
+async function callMemberManagement(payload) {
+  const sb = getSupabase();
+  if (!sb) throw new Error('Connexion Supabase indisponible.');
+  const { data, error } = await sb.functions.invoke('manage-member', { body: payload });
+  if (error) throw new Error(data?.error || error.message || 'Opération impossible.');
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+
+async function openTeamModal() {
   if (!S.co) return openCompanyModal();
   if (curRole !== 'ceo') return toast('Réservé au patron : repassez au rôle CEO.');
+  if (activeAuthRole === 'ceo') {
+    openModal('<h3 class="text-base font-bold text-slate-900">Mon équipe</h3><p class="text-xs text-slate-600">Chargement des membres enregistrés…</p>');
+    try {
+      const result = await callMemberManagement({ action: 'list' });
+      managedMembers = result.members || [];
+      renderManagedTeam();
+    } catch (error) {
+      openModal(`<h3 class="text-base font-bold text-slate-900">Mon équipe</h3><p class="text-xs text-rose-700">${esc(error.message)}</p><div class="flex justify-end"><button onclick="closeModal()" class="px-4 py-2 rounded-xl text-xs bg-slate-100 text-slate-600">Fermer</button></div>`);
+    }
+    return;
+  }
   openModal(`<h3 class="text-base font-bold text-slate-900">Mon équipe</h3><p class="text-xs text-slate-600">Un admin par chantier, par quincaillerie et par camion (ou pour toute la flotte). Nom, e-mail et téléphone sont obligatoires.</p>
   <div class="space-y-2">${S.team.length ? S.team.map(m => `<div class="bg-slate-100 rounded-xl p-3 flex justify-between gap-2 items-start"><div class="text-xs"><div class="font-bold text-slate-900">${esc(m.nom)}</div><div class="text-slate-700">${esc(scopeLabel(m))}</div><div class="text-slate-500">${esc(m.email)} · ${esc(m.tel)}</div></div><button onclick="delMember('${m.id}')" class="text-[11px] text-slate-700 bg-slate-200 px-2 py-1 rounded-lg">Retirer</button></div>`).join('') : '<div class="text-xs text-slate-500 text-center p-4">Aucun membre pour l’instant.</div>'}</div>
   <div class="flex justify-end gap-2"><button onclick="closeModal()" class="px-4 py-2 rounded-xl text-xs bg-slate-100 text-slate-600">Fermer</button><button onclick="openMemberModal()" class="px-4 py-2 rounded-xl text-xs bg-yellow-400 text-slate-950 font-bold">Ajouter un membre</button></div>`);
+}
+function renderManagedTeam() {
+  openModal(`<h3 class="text-base font-bold text-slate-900">Mon équipe</h3><p class="text-xs text-slate-600">Créez les comptes, choisissez leur rôle, puis modifiez ou retirez les membres depuis cet espace.</p>
+    <div class="space-y-2 max-h-[55vh] overflow-y-auto">${managedMembers.length ? managedMembers.map(m => `<div class="bg-slate-100 rounded-xl p-3 flex justify-between gap-2 items-start"><div class="text-xs min-w-0"><div class="font-bold text-slate-900">${esc(m.full_name)}</div><div class="text-slate-700">${esc(ROLE_LABEL[m.role] || m.role)} · ${m.status === 'actif' ? 'Actif' : 'Suspendu'}</div><div class="text-slate-500 truncate">${esc(m.identifier || '')}${m.phone ? ' · ' + esc(m.phone) : ''}</div></div><div class="flex gap-1 shrink-0"><button onclick="editManagedMember('${esc(m.id)}')" class="text-[11px] text-slate-800 bg-slate-200 px-2 py-1 rounded-lg">Modifier</button><button onclick="deleteManagedMember('${esc(m.id)}')" class="text-[11px] text-rose-700 bg-rose-100 px-2 py-1 rounded-lg">Supprimer</button></div></div>`).join('') : '<div class="text-xs text-slate-500 text-center p-4">Aucun membre pour l’instant.</div>'}</div>
+    <div class="flex justify-end gap-2"><button onclick="closeModal()" class="px-4 py-2 rounded-xl text-xs bg-slate-100 text-slate-600">Fermer</button><button onclick="openManagedMemberForm()" class="px-4 py-2 rounded-xl text-xs bg-yellow-400 text-slate-950 font-bold">Inscrire un membre</button></div>`);
+}
+function openManagedMemberForm(member = null) {
+  const roleOptions = [['magasinier', 'Magasinier · Quincaillerie'], ['transport', 'Transport · Flotte et pannes']];
+  const title = member ? 'Modifier le membre' : 'Inscrire un membre';
+  openModal(`<h3 class="text-base font-bold text-slate-900">${title}</h3><form id="managedMemberForm" class="space-y-3">
+    ${fld('Nom et prénom *', 'full_name', 'text', `required maxlength="80" value="${esc(member?.full_name || '')}"`)}
+    ${fld('E-mail ou téléphone de connexion *', 'identifier', 'text', `required ${member ? 'readonly' : ''} value="${esc(member?.identifier || '')}" placeholder="nom@entreprise.com ou 77 000 00 00"`)}
+    ${fld('Téléphone', 'phone', 'tel', `value="${esc(member?.phone || '')}"`)}
+    ${sel('Rôle attribué par la direction *', 'role', roleOptions)}
+    ${member ? '' : fld('Mot de passe provisoire (8 caractères minimum) *', 'password', 'password', 'required minlength="8" maxlength="72" autocomplete="new-password"')}
+    <div class="text-[11px] text-slate-500">Le membre devra choisir un nouveau mot de passe à sa première connexion.</div><div id="managedMemberError" class="text-xs text-rose-600"></div>
+    <div class="flex justify-end gap-2"><button type="button" onclick="renderManagedTeam()" class="px-4 py-2 rounded-xl text-xs bg-slate-100 text-slate-600">Annuler</button><button class="px-4 py-2 rounded-xl text-xs bg-yellow-400 text-slate-950 font-bold">${member ? 'Enregistrer' : 'Créer le compte'}</button></div></form>`);
+  const select = document.querySelector('#managedMemberForm [name="role"]');
+  if (select && member) select.value = member.role;
+  $('managedMemberForm').onsubmit = async event => {
+    event.preventDefault();
+    const values = Object.fromEntries(new FormData(event.currentTarget));
+    const errorBox = $('managedMemberError');
+    try {
+      if (member) {
+        await callMemberManagement({ action: 'update', member_id: member.id, full_name: values.full_name, phone: values.phone, role: values.role });
+        toast('Membre mis à jour.');
+      } else {
+        const result = await callMemberManagement({ action: 'create', full_name: values.full_name, identifier: values.identifier, phone: values.phone, role: values.role, password: values.password });
+        openModal(`<h3 class="text-base font-bold text-slate-900">Compte créé</h3><p class="text-xs text-slate-600">Transmettez ces informations de connexion au membre.</p><div class="rounded-xl bg-slate-100 p-3 text-sm"><div><b>Identifiant :</b> ${esc(result.login_identifier || values.identifier)}</div><div class="mt-1"><b>Mot de passe provisoire :</b> ${esc(values.password)}</div><div class="mt-1"><b>Rôle :</b> ${esc(ROLE_LABEL[values.role] || values.role)}</div></div><p class="text-[11px] text-slate-500">Le membre devra choisir un nouveau mot de passe lors de sa première connexion.</p><div class="flex justify-end"><button onclick="openTeamModal()" class="px-4 py-2 rounded-xl text-xs bg-yellow-400 text-slate-950 font-bold">Retour à l’équipe</button></div>`);
+        return;
+      }
+      await openTeamModal();
+    } catch (error) { errorBox.textContent = error.message; }
+  };
+}
+function editManagedMember(id) {
+  const member = managedMembers.find(m => m.id === id);
+  if (member) openManagedMemberForm(member);
+}
+async function deleteManagedMember(id) {
+  const member = managedMembers.find(m => m.id === id);
+  if (!member || !confirm(`Supprimer le compte de ${member.full_name} ? Cette personne ne pourra plus se connecter.`)) return;
+  try {
+    await callMemberManagement({ action: 'delete', member_id: id });
+    toast('Compte membre supprimé.');
+    await openTeamModal();
+  } catch (error) { toast(error.message); }
 }
 function openMemberModal() {
   const opts = S.chantiers.map(c => ['chantier:' + c.id, 'Admin du chantier : ' + c.nom.replace('Chantier ', '')]).concat(S.depots.map(d => ['depot:' + d.id, 'Admin de la quincaillerie : ' + d.nom]), [['truck:all', 'Admin de toute la flotte']], S.fleet.map(f => ['truck:' + f.id, 'Admin du camion : ' + f.name + ' (' + f.plate + ')']));
@@ -2307,7 +2407,7 @@ function roNotice() { toast('La direction consulte seulement : les saisies sont 
 document.addEventListener('submit', e => { const f = e.target.dataset && e.target.dataset.f; if (f && FORMS[f]) { e.preventDefault(); if (ro() && FIELD_FORMS.includes(f)) return roNotice(); const d = {}; new FormData(e.target).forEach((v, k) => { if (k.slice(-2) === '[]') (d[k] = d[k] || []).push(v); else d[k] = v; }); FORMS[f](d); } });
 window.onload = async function () {
   try { const r = sessionStorage.getItem('safebtp.role'), mu = S.team.find(m => m.id === sessionStorage.getItem('safebtp.user')); if (r && r !== 'ceo' && ((mu && mu.role === r) || !S.co)) { curRole = r; curUser = mu || null; } } catch (e) {}
-  $('roleSelector').value = curRole;
+  if ($('roleSelector')) $('roleSelector').value = curRole;
   changeRole(curRole); updatePricingCalculator(); renderAll(); applyPlanRestrictions();
   // Accès maintenance désactivé
   // Restauration d'arrière-plan résiliente depuis IndexedDB
@@ -2544,6 +2644,8 @@ async function initUserSession(session) {
     await handleLogout(false);
     return 'error';
   }
+  activeAuthRole = role;
+  activeAuthName = me.full_name || me.name || session.user.user_metadata?.full_name || session.user.email || '';
 
   // 4️⃣ Changement obligatoire de mot de passe
   if (me.must_change_password) {
@@ -2989,6 +3091,8 @@ function clearLocalState() {
   S = {};
   curUser = null;
   curRole = null;
+  activeAuthRole = null;
+  activeAuthName = '';
   try {
     sessionStorage.removeItem('safebtp.role');
     sessionStorage.removeItem('safebtp.user');
@@ -3156,7 +3260,7 @@ function updateHeaderMode(mode) {
     if (hErp) hErp.classList.remove('hidden');
     if (navErp) navErp.classList.remove('hidden');
     if (subTitle && S.co) {
-      subTitle.textContent = S.co.nom + (S.co.ville ? ' · ' + S.co.ville : '');
+      subTitle.textContent = (activeAuthRole && activeAuthRole !== 'ceo' ? (activeAuthName || S.co.nom) : S.co.nom) + (S.co.ville ? ' · ' + S.co.ville : '');
     }
   } else {
     if (hLanding) hLanding.classList.remove('hidden');
